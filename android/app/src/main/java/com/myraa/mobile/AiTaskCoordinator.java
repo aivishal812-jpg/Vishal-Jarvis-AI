@@ -18,6 +18,14 @@ final class AiTaskCoordinator {
       foregroundId = id; return true;
     }
   }
+  /** The hands-free popup runs one task right away, regardless of older queued work. */
+  static boolean claimVoice(AiTaskStore store, String id) {
+    synchronized (AiTaskStore.LOCK) {
+      if (foregroundId != null || jobId != null) return false;
+      if (!store.running(id)) return false;
+      foregroundId = id; return true;
+    }
+  }
   static void endForeground(String id) {
     synchronized (AiTaskStore.LOCK) { if (id != null && id.equals(foregroundId)) foregroundId = null; }
   }

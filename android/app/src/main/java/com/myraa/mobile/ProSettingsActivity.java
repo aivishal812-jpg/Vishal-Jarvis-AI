@@ -62,7 +62,7 @@ public final class ProSettingsActivity extends Activity {
 
     SharedPreferences prefs = JarvisPrefs.get(this);
 
-    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens all the time, even while this app is open, and starts a voice call when you say \"Hey Jarvis\" or \"জার্ভিস\". The notification shows what it heard. Uses more battery, and some phones play a short beep. Status: " + WakeWordService.lastStatus);
+    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens in the background, even with the screen locked. Say \"Hey Jarvis\" (or \"জার্ভিস\" / \"Hey service\") with your request, e.g. \"Hey Jarvis, torch jalao\". A small card answers in one short sentence and closes without opening the app; when locked, tasks like opening apps ask for your fingerprint first. It pauses by itself whenever the keyboard's voice typing (or any other app) uses the microphone. The notification shows what it heard. Uses more battery, and some phones play a short beep. Status: " + WakeWordService.lastStatus);
     wake.addView(toggle("Listen for \"Hey Jarvis\"", JarvisPrefs.wakeWord(this), on -> {
       prefs.edit().putBoolean(JarvisPrefs.WAKE_WORD, on).apply();
       if (on) {
@@ -72,6 +72,13 @@ public final class ProSettingsActivity extends Activity {
       } else WakeWordService.stop(this);
       root.postDelayed(this::render, 600);
     }));
+    wake.addView(toggle("Answer on the lock screen (phone stays locked)", JarvisPrefs.lockScreen(this), on -> prefs.edit().putBoolean(JarvisPrefs.LOCK_SCREEN, on).apply()));
+    if (Build.VERSION.SDK_INT >= 34) {
+      android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+      boolean full = nm != null && nm.canUseFullScreenIntent();
+      wake.addView(button((full ? "On: " : "Off: ") + "Full-screen alerts (wake the locked screen)",
+        () -> open(new Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT", Uri.parse("package:" + getPackageName())))));
+    }
     wake.addView(button((Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(this) ? "On: " : "Off: ") + "Open Jarvis instantly when called (display over other apps)",
       () -> open(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())))));
 

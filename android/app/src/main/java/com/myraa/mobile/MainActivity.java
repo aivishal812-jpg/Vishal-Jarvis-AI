@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
   private static final int CAPTURE_IMAGE_REQUEST = 96;
   private static final int CAMERA_FOR_PHOTO_REQUEST = 97;
   private boolean pendingAutoVoice;
+  private boolean shownOverLock;
   private boolean lastAccessibility = false;
   private static final int MAX_TOOL_ROUNDS = 4;
   private static final int MAX_CALLS_PER_ROUND = 4;
@@ -142,7 +143,13 @@ public class MainActivity extends Activity {
     if (intent.getBooleanExtra(JarvisPrefs.EXTRA_AUTO_VOICE, false) || Intent.ACTION_ASSIST.equals(action)
         || "android.intent.action.VOICE_COMMAND".equals(action) || "android.intent.action.VOICE_ASSIST".equals(action)) {
       pendingAutoVoice = true;
-      intent.removeExtra(JarvisPrefs.EXTRA_AUTO_VOICE);
+      boolean fromWake = intent.getBooleanExtra(JarvisPrefs.EXTRA_FROM_WAKE, false);
+      intent.removeExtra(JarvisPrefs.EXTRA_AUTO_VOICE); intent.removeExtra(JarvisPrefs.EXTRA_FROM_WAKE);
+      // Answer on top of the lock screen without unlocking the phone; the lock stays in place.
+      if ((fromWake || Intent.ACTION_ASSIST.equals(action) || "android.intent.action.VOICE_ASSIST".equals(action)) && JarvisPrefs.lockScreen(this)) {
+        setShowWhenLocked(true); setTurnScreenOn(true); shownOverLock = true;
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+      }
     }
   }
 
@@ -785,7 +792,7 @@ public class MainActivity extends Activity {
           if (!model.matches("[A-Za-z0-9._-]{1,100}")) model = "gemini-3.1-flash-live-preview";
           emit(json("type", "live-token", "id", id, "token", token, "model", model, "voice", "Aoede",
             "backgroundLive", allowBackgroundLive, "renew", renew,
-            "instruction", MobileTools.systemPrompt(personality, memoryArray()) + "\nYou are on a live voice call: reply in one or two short spoken sentences, use the mobile_action tool for device tasks, and never invent a result. Messages stay drafts until the user confirms send. For call, set recipient to the name exactly as spoken in Bengali script or Latin letters, including nicknames; do not translate, respell or invent a number — the phone matches contacts phonetically. If several people could match, wait for the phone confirmation instead of guessing. To open an app, call mobile_action with action open_app and the short name the user said (ইউটিউব, হোয়াটসঅ্যাপ, youtube kholo are all resolved on the phone); never say you cannot open apps. If the result says not_installed, read its suggestions back honestly."));
+            "instruction", MobileTools.systemPrompt(personality, memoryArray()) + "\nYou are on a live voice call: reply in one short spoken sentence (about 15 words) unless the user asks for detail, never chat or add filler, use the mobile_action tool for device tasks, and never invent a result. Messages stay drafts until the user confirms send. For call, set recipient to the name exactly as spoken in Bengali script or Latin letters, including nicknames; do not translate, respell or invent a number — the phone matches contacts phonetically. If several people could match, wait for the phone confirmation instead of guessing. To open an app, call mobile_action with action open_app and the short name the user said (ইউটিউব, হোয়াটসঅ্যাপ, youtube kholo are all resolved on the phone); never say you cannot open apps. If the result says not_installed, read its suggestions back honestly."));
         });
       } catch (Exception error) {
         if (liveGeneration.get() == mine) emit(json("type", "live-error", "id", id, "message",
@@ -844,7 +851,7 @@ public class MainActivity extends Activity {
     if(JarvisPrefs.wakeWord(this)&&!WakeWordService.running)WakeWordService.start(this);
     if(web!=null&&MessageAutomationService.available()!=lastAccessibility){lastAccessibility=MessageAutomationService.available();emit(json("type","permissions","state",state()));}
   }
-  @Override protected void onStop(){super.onStop();if(!allowBackgroundLive&&pendingLiveId==null){cancelLive();if(web!=null)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('myraa:lifecycle',{detail:{active:false}}))",null);}}
+  @Override protected void onStop(){super.onStop();if(shownOverLock){shownOverLock=false;setShowWhenLocked(false);setTurnScreenOn(false);getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}if(!allowBackgroundLive&&pendingLiveId==null){cancelLive();if(web!=null)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('myraa:lifecycle',{detail:{active:false}}))",null);}}
   @Override protected void onDestroy() {
     pendingUiAction=null;if(mobileActions!=null)mobileActions.close();
     if(stopLiveRegistered){try{unregisterReceiver(stopLiveReceiver);}catch(IllegalArgumentException ignored){}stopLiveRegistered=false;}

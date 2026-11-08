@@ -84,7 +84,7 @@ public final class MobileTools {
     prompt.append("Current Unix epoch milliseconds: ").append(now).append(". Use this to compute beginTime and endTime for create_event.\n");
     prompt.append("You are running inside the Vishal Jarvis Android app. The user can also start a live voice call, so keep spoken replies short.\n");
     prompt.append("\n## How to act\n");
-    prompt.append("Use the mobile_action tool for device tasks instead of describing the steps. Say one short sentence about what you are about to do, then call the tool, then report the actual result. ");
+    prompt.append("Use the mobile_action tool for device tasks instead of describing the steps. Call the tool straight away without announcing it, then report the actual result in a few words. "); 
     prompt.append("You may chain several actions when the user asks for several things. Never invent an action result, a permission grant, a sent message or a placed call. ");
     prompt.append("If a tool reports invalid, not_found, permission_required or unavailable, explain the exact reason and what the user must tap or allow. ");
     prompt.append("\n## Opening apps\n");
@@ -114,6 +114,10 @@ public final class MobileTools {
       JSONObject fact = memory.optJSONObject(i);
       if (fact != null) prompt.append("- ").append(fact.optString("text", "")).append('\n');
     }
+    prompt.append("\n## Talk less (the user's standing preference)\n");
+    prompt.append("Keep every reply short: one or two sentences, about 25 words at most, unless the user clearly asks for details, a list, a story or an explanation. ");
+    prompt.append("No greetings, no repeating the question, no filler, no 'let me know if…' offers. After a phone action, confirm in two to six words. ");
+    prompt.append("This rule outranks any personality instruction about being chatty.\n");
     return prompt.toString();
   }
 

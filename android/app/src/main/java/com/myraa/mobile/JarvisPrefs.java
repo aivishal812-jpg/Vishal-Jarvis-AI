@@ -10,10 +10,13 @@ final class JarvisPrefs {
   static final String SECURE_ACTIONS = "pro.secureActions";
   static final String FALLBACK_MODEL = "pro.fallbackModel";
   static final String HOME_CITY = "pro.homeCity";
+  static final String LOCK_SCREEN = "pro.lockScreen";
+  static final String EXTRA_FROM_WAKE = "com.myraa.mobile.FROM_WAKE";
   static final String EXTRA_AUTO_VOICE = "com.myraa.mobile.AUTO_VOICE";
   static final String DEFAULT_FALLBACK = "gemini-2.5-flash";
   static SharedPreferences get(Context context) { return context.getSharedPreferences(FILE, Context.MODE_PRIVATE); }
   static boolean wakeWord(Context c) { return get(c).getBoolean(WAKE_WORD, false); }
+  static boolean lockScreen(Context c) { return get(c).getBoolean(LOCK_SCREEN, true); }
   static boolean secureActions(Context c) { return get(c).getBoolean(SECURE_ACTIONS, false); }
   static String fallbackModel(Context c) {
     String value = get(c).getString(FALLBACK_MODEL, DEFAULT_FALLBACK);

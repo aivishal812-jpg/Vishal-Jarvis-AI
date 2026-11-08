@@ -6,26 +6,31 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.media.AudioManager;
+import android.media.AudioRecordingConfiguration;
 import android.os.*;
 import android.provider.Settings;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** "Hey Jarvis" hands-free wake word.
  *  Uses the phone's own speech recognizer in a loop while Vishal Jarvis is in the background;
  *  audio never leaves the phone unless the phone's recognizer itself is online-only.
- *  Pauses automatically while the app is open or a Live call is running. */
+ *  Pauses while a Live call runs, while Jarvis answers, and whenever another app (such as the
+ *  keyboard's voice typing) is recording, so it never fights over the microphone. */
 public final class WakeWordService extends Service {
   static final String STOP = "com.myraa.mobile.WAKE_STOP";
   private static final int NOTIFICATION_ID = 512;
   private static final String CHANNEL = "wake_word";
   /** Loose on purpose: recognisers spell "Jarvis" many ways in Bengali, Hindi and English. */
   static final Pattern WAKE = Pattern.compile(
-    "(?iu)(j\\s?[ae]+\\s?r?\\s?[vbw][iey]+[szhj]|jarv|jervis|jarbis|garvis|charvis|"
+    "(?iu)((?:hey|hi|hay|হেই|হে|হাই|हे|है)\\s*(?:সার্ভিস|সারভিস|service|सर्विस)|j\\s?[ae]+\\s?r?\\s?[vbw][iey]+[szhj]|jarv|jervis|jarbis|garvis|charvis|"
     + "[জযঝ]া?র?্?\\s?[ভব]্?[িী][সশষজ]|জার্ভ|জারভ|"
     + "[जझय]ा?र?्?\\s?[वबभ][िी][सशज]|जार्व|जारव)");
   static volatile boolean running;
@@ -36,8 +41,14 @@ public final class WakeWordService extends Service {
   private long cooldownUntil;
   private int errorsInRow;
   private String language;
+  private PowerManager.WakeLock wakeLock;
   private String lastHeard = "";
   private String shownText = "";
+  /** Another app (for example the keyboard's voice typing) is recording; Jarvis stays out of its way. */
+  private volatile boolean otherMic;
+  private long otherMicFreeSince, ownMicStoppedAt;
+  private AudioManager audio;
+  private AudioManager.AudioRecordingCallback recordingCallback;
 
   static void start(Context context) {
     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { lastStatus = "needs microphone permission"; return; }
@@ -58,7 +69,16 @@ public final class WakeWordService extends Service {
       else startForeground(NOTIFICATION_ID, n);
     } catch (RuntimeException e) { lastStatus = "Android blocked the microphone in background; open the app once"; stopSelf(); return START_NOT_STICKY; }
     running = true;
+    // Keep the CPU awake while the screen is off or locked so the listening loop never freezes.
+    try {
+      if (wakeLock == null) {
+        wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VishalJarvis:wakeword");
+        wakeLock.setReferenceCounted(false);
+      }
+      if (!wakeLock.isHeld()) wakeLock.acquire();
+    } catch (RuntimeException ignored) { }
     if (!SpeechRecognizer.isRecognitionAvailable(this)) { lastStatus = "no speech recognizer on this phone (install Google app)"; stopSelf(); return START_NOT_STICKY; }
+    watchMicrophone();
     handler.removeCallbacksAndMessages(null);
     handler.post(this::loop);
     return START_STICKY;
@@ -77,7 +97,54 @@ public final class WakeWordService extends Service {
   }
 
   /** Pause only while the mic is needed elsewhere: a Live call, Jarvis speaking, or right after a wake. */
-  private boolean paused() { return LiveVoiceService.running || AiTaskEvents.speaking || SystemClock.elapsedRealtime() < cooldownUntil; }
+  private boolean paused() { return LiveVoiceService.running || VoiceCommandActivity.active || AiTaskEvents.speaking || micBusy() || SystemClock.elapsedRealtime() < cooldownUntil; }
+
+  /** Watch other recordings so the keyboard microphone (Gboard voice typing etc.) always wins. */
+  private void watchMicrophone() {
+    if (recordingCallback != null) return;
+    try {
+      audio = getSystemService(AudioManager.class);
+      recordingCallback = new AudioManager.AudioRecordingCallback() {
+        @Override public void onRecordingConfigChanged(List<AudioRecordingConfiguration> configs) { onRecordings(configs); }
+      };
+      audio.registerAudioRecordingCallback(recordingCallback, handler);
+    } catch (RuntimeException ignored) { recordingCallback = null; }
+  }
+
+  private void onRecordings(List<AudioRecordingConfiguration> configs) {
+    int count = configs == null ? 0 : configs.size();
+    boolean silenced = false;
+    if (Build.VERSION.SDK_INT >= 29 && configs != null) for (AudioRecordingConfiguration c : configs) if (c.isClientSilenced()) silenced = true;
+    // While Jarvis listens its own recognizer is one recording; any extra one means someone else wants the mic.
+    // Right after our own recognizer stops its recording can linger for a moment; ignore that.
+    boolean ownTail = !listening && SystemClock.elapsedRealtime() - ownMicStoppedAt < 1500;
+    boolean busy = listening ? (count >= 2 || silenced) : (count >= 1 && !ownTail);
+    if (busy) {
+      otherMicFreeSince = 0;
+      if (!otherMic) { otherMic = true; release(); status("Paused: another app (keyboard voice typing) is using the microphone"); }
+    } else if (otherMic && otherMicFreeSince == 0) otherMicFreeSince = SystemClock.elapsedRealtime();
+  }
+
+  private boolean micBusy() {
+    if (!otherMic) {
+      // Never start listening on top of a recording that is already running.
+      try {
+        if (!listening && audio != null && !audio.getActiveRecordingConfigurations().isEmpty()) {
+          if (SystemClock.elapsedRealtime() - ownMicStoppedAt < 1500) return true; // our own tail; retry shortly
+          otherMic = true; otherMicFreeSince = 0;
+        }
+      } catch (RuntimeException ignored) { }
+      return otherMic;
+    }
+    if (otherMicFreeSince != 0 && SystemClock.elapsedRealtime() - otherMicFreeSince > 2500) {
+      try { if (audio != null && !audio.getActiveRecordingConfigurations().isEmpty()) { otherMicFreeSince = 0; return true; } } catch (RuntimeException ignored) { }
+      otherMic = false; return false;
+    }
+    if (otherMicFreeSince == 0) {
+      try { if (audio != null && audio.getActiveRecordingConfigurations().isEmpty()) otherMicFreeSince = SystemClock.elapsedRealtime(); } catch (RuntimeException ignored) { }
+    }
+    return true;
+  }
 
   /** Show what the wake word is doing in the ongoing notification, so problems are visible. */
   private void status(String text) {
@@ -104,7 +171,7 @@ public final class WakeWordService extends Service {
   private void loop() {
     if (!running) return;
     if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { lastStatus = "needs microphone permission"; stopSelf(); return; }
-    if (paused()) { release(); status(LiveVoiceService.running ? "Paused during the voice call" : "Paused for a moment"); handler.postDelayed(this::loop, 1500); return; }
+    if (paused()) { release(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
     if (listening) return;
     try {
       if (recognizer == null) {
@@ -131,7 +198,7 @@ public final class WakeWordService extends Service {
     public void onBufferReceived(byte[] buffer) { }
     public void onEndOfSpeech() { }
     public void onError(int error) {
-      listening = false;
+      listening = false; ownMicStoppedAt = SystemClock.elapsedRealtime();
       if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) { lastStatus = "needs microphone permission"; stopSelf(); return; }
       errorsInRow++;
       if ((error == 12 || error == 13) && !"en-IN".equals(language)) { language = "en-IN"; release(); }
@@ -140,8 +207,9 @@ public final class WakeWordService extends Service {
       if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) release();
       handler.postDelayed(WakeWordService.this::loop, delay);
     }
-    public void onResults(Bundle results) { listening = false; if (!check(results)) handler.postDelayed(WakeWordService.this::loop, 150); }
-    public void onPartialResults(Bundle partial) { if (check(partial)) { try { recognizer.cancel(); } catch (RuntimeException ignored) { } listening = false; } }
+    public void onResults(Bundle results) { listening = false; ownMicStoppedAt = SystemClock.elapsedRealtime(); if (!check(results)) handler.postDelayed(WakeWordService.this::loop, 150); }
+    /** Wait for the full sentence so "Hey Jarvis, turn on the torch" runs in one go. */
+    public void onPartialResults(Bundle partial) { }
     public void onEvent(int type, Bundle params) { }
   };
 
@@ -153,20 +221,25 @@ public final class WakeWordService extends Service {
       lastHeard = first.length() > 40 ? first.substring(0, 40) + "…" : first;
     }
     for (String phrase : heard) {
-      if (phrase != null && WAKE.matcher(phrase.toLowerCase(Locale.ROOT)).find()) { wake(); return true; }
+      if (phrase == null) continue;
+      String lower = phrase.toLowerCase(Locale.ROOT);
+      Matcher m = WAKE.matcher(lower);
+      if (m.find()) { wake(VoiceCommandActivity.stripWakeWord(phrase.substring(Math.min(phrase.length(), m.start())))); return true; }
     }
     return false;
   }
 
-  private void wake() {
+  private void wake(String command) {
     cooldownUntil = SystemClock.elapsedRealtime() + 8000;
     release();
     try {
       Vibrator vibrator = getSystemService(Vibrator.class);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE));
     } catch (RuntimeException ignored) { }
-    Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-      .putExtra(JarvisPrefs.EXTRA_AUTO_VOICE, true);
+    // Hands-free popup: answers on top of whatever is on screen (or the lock screen) without opening the app.
+    Intent open = new Intent(this, VoiceCommandActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      .putExtra(VoiceCommandActivity.EXTRA_COMMAND, command == null ? "" : command).putExtra(JarvisPrefs.EXTRA_FROM_WAKE, true);
+    wakeScreen();
     boolean started = false;
     if (AiTaskEvents.visible || Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(this)) {
       try { startActivity(open); started = true; } catch (RuntimeException ignored) { }
@@ -178,10 +251,22 @@ public final class WakeWordService extends Service {
       PendingIntent tap = PendingIntent.getActivity(this, 13, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
       manager.notify(513, new Notification.Builder(this, "wake_alert").setSmallIcon(android.R.drawable.ic_btn_speak_now)
         .setContentTitle("Yes? Tap to talk to Jarvis").setContentText("Allow \"Display over other apps\" in Jarvis Pro settings to open instantly.")
-        .setContentIntent(tap).setFullScreenIntent(tap, true).setAutoCancel(true).setTimeoutAfter(15000).build());
+        .setCategory(Notification.CATEGORY_CALL).setContentIntent(tap).setFullScreenIntent(tap, true).setAutoCancel(true).setTimeoutAfter(15000).build());
     }
-    status("Heard you · opening Jarvis");
+    status("Heard you");
     handler.postDelayed(this::loop, 8500);
+  }
+
+  /** Light the screen briefly so the user sees Jarvis answering on the lock screen. */
+  @SuppressWarnings("deprecation")
+  private void wakeScreen() {
+    try {
+      PowerManager power = getSystemService(PowerManager.class);
+      if (power != null && !power.isInteractive()) {
+        PowerManager.WakeLock screen = power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "VishalJarvis:screen");
+        screen.acquire(5000);
+      }
+    } catch (RuntimeException ignored) { }
   }
 
   private String language() {
@@ -190,8 +275,9 @@ public final class WakeWordService extends Service {
   }
 
   private void release() {
+    if (listening) ownMicStoppedAt = SystemClock.elapsedRealtime();
     listening = false;
     if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (RuntimeException ignored) { } recognizer = null; }
   }
-  @Override public void onDestroy() { running = false; handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
+  @Override public void onDestroy() { running = false; try { if (audio != null && recordingCallback != null) audio.unregisterAudioRecordingCallback(recordingCallback); } catch (RuntimeException ignored) { } recordingCallback = null; try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (RuntimeException ignored) { } handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
 }
