@@ -1,6 +1,6 @@
 {
   "name": "vishal-jarvis-android-app-source",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "type": "module",
   "description": "Vishal Jarvis Android app source and its 3D robot character runtime.",

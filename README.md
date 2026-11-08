@@ -1,11 +1,11 @@
-# Vishal Jarvis AI (Android) — v2.0.0
+# Vishal Jarvis AI (Android) — v2.0.1
 
 বাংলা-প্রথম Android AI অ্যাসিস্ট্যান্ট: Gemini টেক্সট চ্যাট, Gemini Live ভয়েস কল, 3D রোবট ক্যারেক্টার এবং ফোন কন্ট্রোল।
 
 ## APK ডাউনলোড
 
 1. রিপোর **Actions** ট্যাবে যান → সবশেষ সবুজ (সফল) "Build Android APK" রানে ঢুকুন।
-2. নিচে **Artifacts** থেকে `Vishal-Jarvis-2.0.0-APK` ডাউনলোড করুন (zip খুললে `.apk` পাবেন)।
+2. নিচে **Artifacts** থেকে `Vishal-Jarvis-<ভার্সন>-APK` ডাউনলোড করুন (zip খুললে `.apk` পাবেন)।
 3. অথবা **Releases** অংশ থেকে সরাসরি `.apk` নামিয়ে নিন।
 4. ফোনে "Unknown apps install" অনুমতি দিয়ে ইনস্টল করুন। আগের অন্য-কী-তে সাইন করা ভার্সন থাকলে প্রথমবার আনইনস্টল করে নিতে হবে।
 

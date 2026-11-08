@@ -62,7 +62,7 @@ public final class ProSettingsActivity extends Activity {
 
     SharedPreferences prefs = JarvisPrefs.get(this);
 
-    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens in the background and opens a voice call when you say \"Hey Jarvis\" or \"Jarvis\". Uses more battery, and some phones play a short beep. Status: " + WakeWordService.lastStatus);
+    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens all the time, even while this app is open, and starts a voice call when you say \"Hey Jarvis\" or \"জার্ভিস\". The notification shows what it heard. Uses more battery, and some phones play a short beep. Status: " + WakeWordService.lastStatus);
     wake.addView(toggle("Listen for \"Hey Jarvis\"", JarvisPrefs.wakeWord(this), on -> {
       prefs.edit().putBoolean(JarvisPrefs.WAKE_WORD, on).apply();
       if (on) {
@@ -72,6 +72,8 @@ public final class ProSettingsActivity extends Activity {
       } else WakeWordService.stop(this);
       root.postDelayed(this::render, 600);
     }));
+    wake.addView(button((Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(this) ? "On: " : "Off: ") + "Open Jarvis instantly when called (display over other apps)",
+      () -> open(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())))));
 
     LinearLayout lock = card("Security lock", SecureGate.available(this) ? "Ask for fingerprint, face or screen lock before Jarvis places a call or sends a message." : "Set a screen lock on this phone (Android 9+) to use this.");
     lock.addView(toggle("Lock calls and messages", JarvisPrefs.secureActions(this), on -> prefs.edit().putBoolean(JarvisPrefs.SECURE_ACTIONS, on).apply()));

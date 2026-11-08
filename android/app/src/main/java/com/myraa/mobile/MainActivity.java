@@ -103,9 +103,9 @@ public class MainActivity extends Activity {
     tts = new TextToSpeech(this, status -> {
       ttsReady = status == TextToSpeech.SUCCESS;
       if (ttsReady) tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-        @Override public void onStart(String id) { emit(json("type", "speech", "active", true)); }
-        @Override public void onDone(String id) { emit(json("type", "speech", "active", false)); }
-        @Override public void onError(String id) { emit(json("type", "speech", "active", false)); error("tts", "The installed speech engine could not speak. Text remains available.", null); }
+        @Override public void onStart(String id) { AiTaskEvents.speaking = true; emit(json("type", "speech", "active", true)); }
+        @Override public void onDone(String id) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
+        @Override public void onError(String id) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); error("tts", "The installed speech engine could not speak. Text remains available.", null); }
       });
     });
     mobileActions=new MobileActions(this,(id,result)->{
@@ -451,7 +451,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void stopNativeCapture() { if (audioCapture != null) audioCapture.stop(); }
     @JavascriptInterface public String audioDiagnostics() { return audioCapture == null ? "{}" : audioCapture.diagnostics().toString(); }
     @JavascriptInterface public void speak(String text) { speakText(text); }
-    @JavascriptInterface public void stopSpeech() { if (tts != null) tts.stop(); emit(json("type", "speech", "active", false)); }
+    @JavascriptInterface public void stopSpeech() { if (tts != null) tts.stop(); AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
     @JavascriptInterface public void clearKey() {
       cancel(); AiTaskCoordinator.cancelAll(MainActivity.this);
       synchronized (settingsLock) {
