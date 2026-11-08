@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="accessibility_service_label">Vishal Jarvis message sender</string>
+  <string name="accessibility_service_description">Lets Vishal Jarvis send the message you approved inside WhatsApp, Telegram, Instagram or Messenger. It only fills and presses Send in the chat you asked for, and reports the real result.</string>
+  <string name="widget_description">Talk to Vishal Jarvis with one tap</string>
+  <string name="notification_listener_label">Vishal Jarvis notification reader</string>
+</resources>

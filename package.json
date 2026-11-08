@@ -1,0 +1,27 @@
+{
+  "name": "vishal-jarvis-android-app-source",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vishal Jarvis Android app source and its 3D robot character runtime.",
+  "scripts": {
+    "build:android": "pwsh -NoProfile -File scripts/build-android.ps1",
+    "build:android:sh": "bash scripts/build-android.sh",
+    "build:mobile-assets": "vite build --config vite.mobile.config.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build:mobile-assets",
+    "build:android-tests": "pwsh -NoProfile -File scripts/build-android-tests.ps1",
+    "test": "tsx tests/actions.test.ts && tsx tests/background.test.ts && tsx tests/playback.test.ts"
+  },
+  "dependencies": {
+    "mmd-parser": "^1.0.4",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/three": "^0.185.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.2.3"
+  }
+}
