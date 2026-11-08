@@ -62,7 +62,7 @@ public final class ProSettingsActivity extends Activity {
 
     SharedPreferences prefs = JarvisPrefs.get(this);
 
-    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens in the background, even with the screen locked. Say \"Hey Jarvis\" (or \"জার্ভিস\" / \"Hey service\") with your request, e.g. \"Hey Jarvis, torch jalao\". A small card answers in one short sentence and closes without opening the app; when locked, tasks like opening apps ask for your fingerprint first. It pauses by itself whenever the keyboard's voice typing (or any other app) uses the microphone. The notification shows what it heard. Uses more battery, and some phones play a short beep. Status: " + WakeWordService.lastStatus);
+    LinearLayout wake = card("Wake word: \"Hey Jarvis\"", "Listens in the background, even with the screen locked. Say \"Hey Jarvis\" (or \"জার্ভিস\" / \"Hey service\") with your request, e.g. \"Hey Jarvis, torch jalao\". A small card answers in one short sentence and closes without opening the app; when locked, tasks like opening apps ask for your fingerprint first. It pauses by itself whenever the keyboard's voice typing (or any other app) uses the microphone. The notification shows what it heard. Uses more battery. The repeating microphone beep is silenced (sounds are muted for about a second each time the mic restarts). Status: " + WakeWordService.lastStatus);
     wake.addView(toggle("Listen for \"Hey Jarvis\"", JarvisPrefs.wakeWord(this), on -> {
       prefs.edit().putBoolean(JarvisPrefs.WAKE_WORD, on).apply();
       if (on) {
@@ -72,6 +72,7 @@ public final class ProSettingsActivity extends Activity {
       } else WakeWordService.stop(this);
       root.postDelayed(this::render, 600);
     }));
+    wake.addView(toggle("Silence the microphone beep", BeepMuter.enabled(this), on -> { prefs.edit().putBoolean(JarvisPrefs.SILENT_MIC, on).apply(); if (!on) BeepMuter.unmuteNow(); }));
     wake.addView(toggle("Answer on the lock screen (phone stays locked)", JarvisPrefs.lockScreen(this), on -> prefs.edit().putBoolean(JarvisPrefs.LOCK_SCREEN, on).apply()));
     if (Build.VERSION.SDK_INT >= 34) {
       android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);

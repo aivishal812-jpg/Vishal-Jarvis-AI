@@ -11,6 +11,7 @@ final class JarvisPrefs {
   static final String FALLBACK_MODEL = "pro.fallbackModel";
   static final String HOME_CITY = "pro.homeCity";
   static final String LOCK_SCREEN = "pro.lockScreen";
+  static final String SILENT_MIC = "pro.silentMic";
   static final String EXTRA_FROM_WAKE = "com.myraa.mobile.FROM_WAKE";
   static final String EXTRA_AUTO_VOICE = "com.myraa.mobile.AUTO_VOICE";
   static final String DEFAULT_FALLBACK = "gemini-2.5-flash";

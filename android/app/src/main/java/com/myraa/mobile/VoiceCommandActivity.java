@@ -146,20 +146,20 @@ public final class VoiceCommandActivity extends Activity {
     releaseRecognizer();
     recognizer = SpeechRecognizer.createSpeechRecognizer(this);
     recognizer.setRecognitionListener(new RecognitionListener() {
-      public void onReadyForSpeech(Bundle b) { }
+      public void onReadyForSpeech(Bundle b) { BeepMuter.unmuteLater(700); }
       public void onBeginningOfSpeech() { }
       public void onRmsChanged(float v) { }
       public void onBufferReceived(byte[] b) { }
-      public void onEndOfSpeech() { answer.setText(pick("ভাবছি…", "Thinking…")); }
+      public void onEndOfSpeech() { BeepMuter.mute(VoiceCommandActivity.this); answer.setText(pick("ভাবছি…", "Thinking…")); }
       public void onPartialResults(Bundle b) { String t = best(b); if (!t.isEmpty()) heard.setText(t); }
       public void onEvent(int t, Bundle b) { }
       public void onError(int error) {
-        releaseRecognizer();
+        releaseRecognizer(); BeepMuter.unmuteLater(500);
         if (followUps > 0 || error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) { close(); return; }
         say("শুনতে পেলাম না।", "I couldn't hear that.");
       }
       public void onResults(Bundle b) {
-        releaseRecognizer();
+        releaseRecognizer(); BeepMuter.unmuteLater(500);
         String text = best(b);
         if (text.isEmpty()) { close(); return; }
         handle(text);
@@ -171,7 +171,7 @@ public final class VoiceCommandActivity extends Activity {
       .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
       .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
       .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-    try { recognizer.startListening(intent); } catch (RuntimeException e) { say("মাইক্রোফোন চালু হলো না।", "The microphone could not start."); }
+    try { BeepMuter.mute(this); recognizer.startListening(intent); } catch (RuntimeException e) { say("মাইক্রোফোন চালু হলো না।", "The microphone could not start."); }
   }
 
   private static String best(Bundle bundle) {
@@ -289,6 +289,7 @@ public final class VoiceCommandActivity extends Activity {
 
   private void speak(String text) {
     if (closed) return;
+    BeepMuter.unmuteNow(); // the reply must always be audible
     if (tts == null || !ttsReady) {
       if (tts != null && waitingToSpeak == null) { waitingToSpeak = text; ui.postDelayed(() -> { if (waitingToSpeak != null) { waitingToSpeak = null; afterSpeech(); } }, 4000); return; }
       ui.postDelayed(this::afterSpeech, 2500); return;
@@ -331,6 +332,7 @@ public final class VoiceCommandActivity extends Activity {
   @Override protected void onDestroy() {
     active = false; closed = true; cancelled = true;
     releaseRecognizer();
+    BeepMuter.unmuteLater(500);
     if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (RuntimeException ignored) { } }
     AiTaskEvents.speaking = false;
     try { actions.close(); } catch (RuntimeException ignored) { }

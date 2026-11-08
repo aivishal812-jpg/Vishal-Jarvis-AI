@@ -29,6 +29,7 @@ public final class LiveVoiceService extends Service {
     if (Build.VERSION.SDK_INT >= 30) startForeground(42,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE|ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
     else startForeground(42,notification);
     running = true;
+    BeepMuter.unmuteNow();
     if (Settings.canDrawOverlays(this) && chip == null) {
       try {
         windows=getSystemService(WindowManager.class);chip=new LinearLayout(this);chip.setPadding(6,4,6,4);chip.setBackgroundColor(0xee17252a);

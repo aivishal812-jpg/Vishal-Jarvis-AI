@@ -735,6 +735,7 @@ public class MainActivity extends Activity {
       int language = tts.setLanguage(Locale.forLanguageTag(prefs.getString("language", "bn-IN")));
       if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) { error("tts", "This speech engine does not have the selected language installed.", null); return; }
       String limited = text.substring(0, Math.min(text.length(), TextToSpeech.getMaxSpeechInputLength()));
+      BeepMuter.unmuteNow();
       if (tts.speak(limited, TextToSpeech.QUEUE_FLUSH, null, "myraa-reply") == TextToSpeech.ERROR) error("tts", "The installed speech engine could not start.", null);
     });
   }

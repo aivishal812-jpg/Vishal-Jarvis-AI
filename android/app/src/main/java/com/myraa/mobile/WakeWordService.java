@@ -78,6 +78,7 @@ public final class WakeWordService extends Service {
       if (!wakeLock.isHeld()) wakeLock.acquire();
     } catch (RuntimeException ignored) { }
     if (!SpeechRecognizer.isRecognitionAvailable(this)) { lastStatus = "no speech recognizer on this phone (install Google app)"; stopSelf(); return START_NOT_STICKY; }
+    BeepMuter.restore(this);
     watchMicrophone();
     handler.removeCallbacksAndMessages(null);
     handler.post(this::loop);
@@ -171,7 +172,7 @@ public final class WakeWordService extends Service {
   private void loop() {
     if (!running) return;
     if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { lastStatus = "needs microphone permission"; stopSelf(); return; }
-    if (paused()) { release(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
+    if (paused()) { release(); BeepMuter.unmuteNow(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
     if (listening) return;
     try {
       if (recognizer == null) {
@@ -184,21 +185,27 @@ public final class WakeWordService extends Service {
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language())
         .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+        // Ask for long sessions so the mic restarts (and would beep) as rarely as possible.
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L)
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
         .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
       listening = true;
+      BeepMuter.mute(this); // silence the start "ding"
       recognizer.startListening(intent);
       status("Listening · say \"Jarvis\"");
     } catch (RuntimeException e) { listening = false; release(); handler.postDelayed(this::loop, 5000); }
   }
 
   private final RecognitionListener listener = new RecognitionListener() {
-    public void onReadyForSpeech(Bundle params) { errorsInRow = 0; }
+    public void onReadyForSpeech(Bundle params) { errorsInRow = 0; BeepMuter.unmuteLater(700); }
     public void onBeginningOfSpeech() { }
     public void onRmsChanged(float rms) { }
     public void onBufferReceived(byte[] buffer) { }
-    public void onEndOfSpeech() { }
+    public void onEndOfSpeech() { BeepMuter.mute(WakeWordService.this); } // silence the stop "ding"
     public void onError(int error) {
       listening = false; ownMicStoppedAt = SystemClock.elapsedRealtime();
+      BeepMuter.unmuteLater(600);
       if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) { lastStatus = "needs microphone permission"; stopSelf(); return; }
       errorsInRow++;
       if ((error == 12 || error == 13) && !"en-IN".equals(language)) { language = "en-IN"; release(); }
@@ -207,7 +214,7 @@ public final class WakeWordService extends Service {
       if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) release();
       handler.postDelayed(WakeWordService.this::loop, delay);
     }
-    public void onResults(Bundle results) { listening = false; ownMicStoppedAt = SystemClock.elapsedRealtime(); if (!check(results)) handler.postDelayed(WakeWordService.this::loop, 150); }
+    public void onResults(Bundle results) { listening = false; ownMicStoppedAt = SystemClock.elapsedRealtime(); BeepMuter.unmuteLater(600); if (!check(results)) handler.postDelayed(WakeWordService.this::loop, 150); }
     /** Wait for the full sentence so "Hey Jarvis, turn on the torch" runs in one go. */
     public void onPartialResults(Bundle partial) { }
     public void onEvent(int type, Bundle params) { }
@@ -279,5 +286,5 @@ public final class WakeWordService extends Service {
     listening = false;
     if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (RuntimeException ignored) { } recognizer = null; }
   }
-  @Override public void onDestroy() { running = false; try { if (audio != null && recordingCallback != null) audio.unregisterAudioRecordingCallback(recordingCallback); } catch (RuntimeException ignored) { } recordingCallback = null; try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (RuntimeException ignored) { } handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
+  @Override public void onDestroy() { running = false; BeepMuter.unmuteNow(); try { if (audio != null && recordingCallback != null) audio.unregisterAudioRecordingCallback(recordingCallback); } catch (RuntimeException ignored) { } recordingCallback = null; try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (RuntimeException ignored) { } handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
 }
