@@ -234,11 +234,11 @@ public final class UiAutomationService extends AccessibilityService {
       }
       out.put("status", "info")
         .put("package", pkg)
-        .put("app", label(pkg))
+        .put("app", appName(pkg))
         .put("text", text.toString().trim())
         .put("lines", lines)
         .put("fields", editable)
-        .put("message", text.length() == 0 ? "I could not read any text on this screen." : "Read " + lines + " line(s) from " + label(pkg) + ".");
+        .put("message", text.length() == 0 ? "I could not read any text on this screen." : "Read " + lines + " line(s) from " + appName(pkg) + ".");
       if (withNodes) out.put("nodeCount", nodes.size());
     } catch (Exception failure) {
       try { out.put("status", "failed").put("message", "The screen could not be read right now."); } catch (Exception ignored) { }
@@ -278,7 +278,7 @@ public final class UiAutomationService extends AccessibilityService {
         if (value.isEmpty()) continue;
         if (id != null && (id.contains("conversation_contact_name") || id.contains("title") || id.contains("name"))) { sender = value; break; }
       }
-      out.put("status", "info").put("package", pkg).put("app", label(pkg))
+      out.put("status", "info").put("package", pkg).put("app", appName(pkg))
         .put("sender", sender).put("lastMessage", last)
         .put("message", last.isEmpty() ? "I could not find a message on this screen." : "Latest message" + (sender.isEmpty() ? "" : " in " + sender) + ": " + last);
     } catch (Exception failure) {
@@ -463,7 +463,7 @@ public final class UiAutomationService extends AccessibilityService {
     return value == null ? "" : value.toString().toLowerCase(Locale.ROOT);
   }
 
-  private String label(String pkg) {
+  private static String appName(String pkg) {
     try { android.content.pm.PackageManager pm = getPackageManager(); return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString(); }
     catch (Exception ignored) { return pkg; }
   }

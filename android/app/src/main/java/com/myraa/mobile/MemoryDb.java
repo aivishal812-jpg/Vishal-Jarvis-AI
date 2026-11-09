@@ -83,7 +83,6 @@ final class MemoryDb extends SQLiteOpenHelper {
         if (conversation > 0) addTurn(writable, conversation, role, text, at);
         lastTask = taskId;
       }
-      SQLiteDatabase writable = db.getWritableDatabase();
       JSONArray facts = new JSONArray(prefs.getString("memory", "[]"));
       for (int i = 0; i < facts.length(); i++) {
         JSONObject fact = facts.optJSONObject(i);

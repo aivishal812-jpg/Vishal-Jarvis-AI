@@ -91,7 +91,7 @@ def members(cls):
         params = split_params(m.group('params'))
         arity = len(params)
         varargs = bool(params) and '...' in params[-1]
-        found.setdefault(name, []).append({'arity': arity, 'varargs': varargs})
+        found.setdefault(name, []).append({'arity': arity, 'varargs': varargs, 'static': 'static' in m.group('prefix')})
         if 'private' in m.group('prefix'):
             privates.add(name)
     return found, privates
@@ -136,6 +136,21 @@ for cls, raw in files.items():
         if not any(x['arity'] == n or (x['varargs'] and n >= x['arity'] - 1) for x in info):
             arities = sorted({x['arity'] for x in info})
             problems.append(f'{cls}.java:{line} {target}.{meth}({n} args) -> declared arity {arities}')
+
+# static-context violations: a bare same-class call inside a static method to an instance method
+for cls, raw in files.items():
+    text = strip(raw)
+    for m in re.finditer(r'\b([A-Z]\w*)\s*\.\s*(\w+)\s*\(', text):
+        target, meth = m.group(1), m.group(2)
+        if target not in decls:
+            continue
+        info = decls[target].get(meth)
+        if not info:
+            continue
+        if any(x.get('static') for x in info):
+            continue
+        line = text[:m.start()].count('\n') + 1
+        problems.append(f'{cls}.java:{line} {target}.{meth}() -> only instance methods exist; static context cannot use it')
 
 for p in problems:
     print(p)
