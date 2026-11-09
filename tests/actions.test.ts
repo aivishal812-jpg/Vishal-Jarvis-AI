@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
  * text chat and Live voice share. Run with `npm test`.
  */
 import assert from 'node:assert/strict';
-import { LIVE_TOOLS, MOBILE_TOOL, REMEMBER_TOOL, describeAction, parseMobileAction } from '../src/mobile/actions';
+import { ACTION_ENUM, LIVE_TOOLS, MOBILE_TOOL, REMEMBER_TOOL, describeAction, parseMobileAction } from '../src/mobile/actions';
 
 type Case = [input: string, expected: ReturnType<typeof parseMobileAction>];
 const cases: Case[] = [
@@ -105,7 +105,7 @@ for (const prose of ['আজ আবহাওয়া কেমন?', 'how are y
   }
 }
 
-const declared = MOBILE_TOOL.parameters.properties.action.enum as string[];
+const declared = ACTION_ENUM;
 // Read the Java declaration directly so the two lists can never silently drift apart.
 const javaSource = readFileSync(new URL('../android/app/src/main/java/com/myraa/mobile/MobileTools.java', import.meta.url), 'utf8');
 const enumBlock = javaSource.slice(javaSource.indexOf('"enum", new JSONArray()'), javaSource.indexOf('"description", "Which Android action'));

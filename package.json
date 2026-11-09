@@ -8,8 +8,10 @@
     "build:android": "pwsh -NoProfile -File scripts/build-android.ps1",
     "build:android:sh": "bash scripts/build-android.sh",
     "build:mobile-assets": "vite build --config vite.mobile.config.ts",
+    "sync:tools": "node scripts/sync-tools.mjs",
+    "check:tools": "node scripts/sync-tools.mjs --check",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test && npm run build:mobile-assets",
+    "check": "npm run check:tools && npm run typecheck && npm test && npm run build:mobile-assets",
     "build:android-tests": "pwsh -NoProfile -File scripts/build-android-tests.ps1",
     "test": "tsx tests/actions.test.ts && tsx tests/background.test.ts && tsx tests/playback.test.ts"
   },
