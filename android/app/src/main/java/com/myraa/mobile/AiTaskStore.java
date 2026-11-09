@@ -138,6 +138,7 @@ final class AiTaskStore extends SQLiteOpenHelper {
         // Structured copy: conversation, both turns and search index (best effort, never fatal).
         MemoryDb.recordTurn(app, id, task.prompt, "user", task.prompt);
         MemoryDb.recordTurn(app, id, task.prompt, "model", reply);
+        MemoryDb.summariseIfLong(app, id, task.prompt, reply);
       }
       ContentValues v = new ContentValues(); v.put("status", "completed"); v.put("result", reply); v.put("error", ""); v.put("updated_at", System.currentTimeMillis());
       getWritableDatabase().update("tasks", v, "request_id=? AND status IN ('queued','running')", new String[]{id});

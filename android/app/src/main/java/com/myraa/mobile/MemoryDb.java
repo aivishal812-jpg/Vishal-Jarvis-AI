@@ -155,6 +155,36 @@ final class MemoryDb extends SQLiteOpenHelper {
     } catch (RuntimeException ignored) { /* the row itself was saved; search will catch up */ }
   }
 
+  /** Lower-cased, trimmed, single-spaced: the key an entity is looked up by. */
+  static String normaliseName(String name) {
+    return name == null ? "" : name.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+  }
+
+  /** One of the known entity kinds, defaulting to a plain fact. */
+  static String normaliseKind(String kind) {
+    String value = kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT);
+    for (String allowed : new String[]{"fact", "contact", "place", "routine", "shop", "other"}) {
+      if (allowed.equals(value)) return value;
+    }
+    return "fact";
+  }
+
+  /** The stored value for a kind + name, or null. */
+  static String entityValue(Context context, String kind, String name) { return entity(context, kind, name); }
+
+  /** All saved entities as "kind name = value" lines, newest first. */
+  static String entityList(Context context, int limit) {
+    StringBuilder out = new StringBuilder();
+    try (Cursor c = get(context).getReadableDatabase().query("entities", new String[]{"kind", "name", "value"},
+        null, null, null, null, "updated_at DESC", String.valueOf(Math.max(1, limit)))) {
+      while (c.moveToNext()) {
+        if (out.length() > 0) out.append("\n");
+        out.append(c.getString(0)).append(' ').append(c.getString(1)).append(" = ").append(c.getString(2));
+      }
+    } catch (Exception ignored) { }
+    return out.toString();
+  }
+
   /** Called by the store when a task finishes, so both write paths agree. */
   static void recordTurn(Context context, String requestId, String prompt, String role, String text) {
     try {
@@ -177,8 +207,8 @@ final class MemoryDb extends SQLiteOpenHelper {
         return AiAgent.json("status", "invalid", "message", "Tell me what to remember, for example “my shop number is …”.");
       if (value.length() > 240) return AiAgent.json("status", "invalid", "message", "That value is too long to remember.");
       ContentValues values = new ContentValues();
-      values.put("kind", kind);
-      values.put("name", name.trim().toLowerCase(Locale.ROOT));
+      values.put("kind", normaliseKind(kind));
+      values.put("name", normaliseName(name));
       values.put("value", value.trim());
       values.put("updated_at", System.currentTimeMillis());
       get(context).getWritableDatabase().insertWithOnConflict("entities", null, values, SQLiteDatabase.CONFLICT_REPLACE);
@@ -260,6 +290,53 @@ final class MemoryDb extends SQLiteOpenHelper {
     return AiAgent.json("status", out.length() == 0 ? "not_found" : "info",
       "message", out.length() == 0 ? "We have not talked yet." : "Here is what we last discussed.",
       "turns", out);
+  }
+
+  /**
+   * Writes a compact, deterministic summary for a conversation once it holds a few turns.
+   *
+   * This is not a model call: it is the first sentence of each turn, which is enough for
+   * "what did we discuss last week" and costs nothing. The honest limit is documented in the
+   * README: summaries are extracts, not paraphrase.
+   */
+  static void summariseIfLong(Context context, String requestId, String prompt, String reply) {
+    try {
+      SQLiteDatabase db = get(context).getWritableDatabase();
+      int conversation = ensureConversation(db, requestId, prompt, System.currentTimeMillis());
+      if (conversation <= 0) return;
+      int count = 0;
+      try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM turns WHERE conversation_id=?", new String[]{String.valueOf(conversation)})) {
+        if (c.moveToFirst()) count = c.getInt(0);
+      }
+      if (count < 4) return; // short chats are already cheap and self-explanatory
+      try (Cursor existing = db.rawQuery("SELECT COUNT(*) FROM summaries WHERE conversation_id=?", new String[]{String.valueOf(conversation)})) {
+        if (existing.moveToFirst() && existing.getInt(0) > 0) return;
+      }
+      StringBuilder summary = new StringBuilder();
+      try (Cursor c = db.query("turns", new String[]{"role", "text"}, "conversation_id=?",
+          new String[]{String.valueOf(conversation)}, null, null, "_id ASC", "8")) {
+        while (c.moveToNext()) {
+          String text = firstSentence(c.getString(1));
+          if (text.isEmpty()) continue;
+          if (summary.length() > 0) summary.append(" | ");
+          summary.append("user".equals(c.getString(0)) ? "আপনি: " : "Jarvis: ").append(text);
+        }
+      }
+      if (summary.length() > 0) saveSummary(context, requestId, summary.toString());
+    } catch (Exception ignored) { }
+  }
+
+  private static String firstSentence(String text) {
+    if (text == null) return "";
+    String clean = text.replaceAll("\\s+", " ").trim();
+    if (clean.isEmpty()) return "";
+    int end = clean.length();
+    for (char stop : new char[]{'.', '?', '!', '।', '\n'}) {
+      int at = clean.indexOf(stop);
+      if (at > 8 && at < end) end = at + 1;
+    }
+    String sentence = clean.substring(0, Math.min(end, 120));
+    return sentence.trim();
   }
 
   /** One-paragraph summary of a conversation, stored so long chats stay cheap to send. */

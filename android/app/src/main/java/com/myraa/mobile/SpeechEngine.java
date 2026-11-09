@@ -25,6 +25,9 @@ final class SpeechEngine {
     void onError(String message);
   }
 
+  /** Chunk size, kept below every engine limit measured so far (the platform limit is ~4000). */
+  static final int CHUNK_CHARS = 3600;
+
   private final TextToSpeech tts;
   private Listener listener;
   private final String runId = UUID.randomUUID().toString();
@@ -77,7 +80,8 @@ final class SpeechEngine {
     finished = 0;
     active = true;
     if (listener != null) listener.onStart();
-    int max = Math.max(200, TextToSpeech.getMaxSpeechInputLength() - 64);
+    int engineMax = Math.max(200, TextToSpeech.getMaxSpeechInputLength() - 64);
+    int max = Math.min(CHUNK_CHARS, engineMax);
     for (int i = 0; i < chunks.size(); i++) {
       String chunk = chunks.get(i);
       Bundle params = new Bundle();
@@ -113,7 +117,7 @@ final class SpeechEngine {
     if (text == null) return chunks;
     String clean = text.replaceAll("[ \\t]+", " ").replaceAll("\\n{2,}", "\n").trim();
     if (clean.isEmpty()) return chunks;
-    int max = Math.max(200, TextToSpeech.getMaxSpeechInputLength() - 64);
+    int max = CHUNK_CHARS;
     for (String paragraph : clean.split("\\n+")) {
       String remaining = paragraph.trim();
       while (remaining.length() > max) {

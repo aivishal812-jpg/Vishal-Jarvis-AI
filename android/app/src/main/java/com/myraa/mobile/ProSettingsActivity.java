@@ -31,7 +31,7 @@ import java.util.Iterator;
 
 /** Native settings screen for the Jarvis Pro features (wake word, lock, permissions, backup, crash log). */
 public final class ProSettingsActivity extends Activity {
-  private static final int MIC_REQUEST = 201, CAL_REQUEST = 202, EXPORT_REQUEST = 203, IMPORT_REQUEST = 204;
+  private static final int MIC_REQUEST = 201, CAL_REQUEST = 202, EXPORT_REQUEST = 203, IMPORT_REQUEST = 204, LOCATION_REQUEST = 205;
   private static final String[] BACKUP_KEYS = {"memory", "language", "model", "liveModel", "quality", "spokenReplies", "textScale",
     "contactAliasesV1", JarvisPrefs.WAKE_WORD, JarvisPrefs.SECURE_ACTIONS, JarvisPrefs.FALLBACK_MODEL, JarvisPrefs.HOME_CITY,
     NoteStore.KEY, ReminderStore.KEY};
@@ -96,6 +96,48 @@ public final class ProSettingsActivity extends Activity {
     perms.addView(button((unrestricted ? "On: " : "Off: ") + "Run without battery limits", () -> open(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())))));
     perms.addView(button("Make Jarvis the default assistant", () -> open(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))));
     perms.addView(button("All app permissions", () -> open(appDetails())));
+
+    LinearLayout proactive = card("Proactive help (optional)", "Jarvis can speak up on its own: a morning briefing, a heads-up before meetings, a digest of important notifications, missed calls and one-time codes. Every one of these is off unless you turn it on, nothing is ever read aloud by itself, and codes are never shown in a notification.");
+    proactive.addView(toggle("Morning briefing", ProactiveScheduler.morningEnabled(this), (Flag) on -> { ProactiveScheduler.setMorning(this, on); render(); }));
+    if (ProactiveScheduler.morningEnabled(this)) {
+      int minute = ProactiveScheduler.morningMinute(this);
+      proactive.addView(field("Briefing time, 24-hour HH:MM (now " + String.format(java.util.Locale.US, "%02d:%02d", minute / 60, minute % 60) + ")", "", v -> {
+        java.util.regex.Matcher at = java.util.regex.Pattern.compile("^(\\d{1,2})[:. ]?(\\d{2})$").matcher(v.trim());
+        if (!at.matches()) { toast("Use HH:MM, for example 07:30"); return; }
+        int hour = Integer.parseInt(at.group(1)), min = Integer.parseInt(at.group(2));
+        if (hour > 23 || min > 59) { toast("Use HH:MM, for example 07:30"); return; }
+        ProactiveScheduler.setMorningMinute(this, hour * 60 + min);
+        toast("Briefing moved to " + String.format(java.util.Locale.US, "%02d:%02d", hour, min));
+        render();
+      }));
+    }
+    proactive.addView(toggle("Meeting reminder before an event", ProactiveScheduler.meetingEnabled(this), (Flag) on -> {
+      ProactiveScheduler.setMeeting(this, on);
+      if (on && checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, CAL_REQUEST);
+      else ProactiveScheduler.scheduleMeetingCheck(this);
+      render();
+    }));
+    if (ProactiveScheduler.meetingEnabled(this)) {
+      proactive.addView(field("Minutes before the event (now " + ProactiveScheduler.meetingLead(this) + ")", "", v -> {
+        try { ProactiveScheduler.setMeetingLead(this, Integer.parseInt(v.trim())); toast("Saved"); render(); } catch (RuntimeException bad) { toast("Use a number of minutes, 3 to 120"); }
+      }));
+    }
+    proactive.addView(toggle("Important notification digest", ProactiveScheduler.digestEnabled(this), (Flag) on -> { ProactiveScheduler.setDigest(this, on); render(); }));
+    if (ProactiveScheduler.digestEnabled(this)) {
+      proactive.addView(field("How often, in minutes (now " + ProactiveScheduler.digestEvery(this) + ")", "", v -> {
+        try { ProactiveScheduler.setDigestEvery(this, Integer.parseInt(v.trim())); toast("Saved"); render(); } catch (RuntimeException bad) { toast("Use minutes, 30 to 480"); }
+      }));
+    }
+    proactive.addView(toggle("Notice a missed call", ProactiveScheduler.missedEnabled(this), ProactiveScheduler::setMissed));
+    proactive.addView(toggle("Notice a one-time code (code stays hidden)", ProactiveScheduler.otpEnabled(this), ProactiveScheduler::setOtp));
+    proactive.addView(field("Optional place routine, e.g. office (leave empty for off)", ProactiveScheduler.routinePlace(this), v -> {
+      if (!v.trim().isEmpty() && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
+      }
+      ProactiveScheduler.setRoutinePlace(this, v);
+      toast(v.trim().isEmpty() ? "Place routine off" : "Saved. Turn on location for Vishal Jarvis for this to work.");
+      render();
+    }));
 
     LinearLayout prefsCard = card("Preferences", "Home city is used for weather and the daily briefing. The backup model is used if the main Gemini model is busy.");
     prefsCard.addView(field("Home city (e.g. Kolkata)", JarvisPrefs.homeCity(this), v -> prefs.edit().putString(JarvisPrefs.HOME_CITY, v.length() > 60 ? v.substring(0, 60) : v).apply()));
@@ -190,6 +232,13 @@ public final class ProSettingsActivity extends Activity {
 
   @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(request, permissions, results);
+    if (request == LOCATION_REQUEST) {
+      ProactiveScheduler.setRoutinePlace(this, ProactiveScheduler.routinePlace(this));
+      toast(checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        ? "Location allowed. The place routine now works while the app is closed." : "Location was denied, so the place routine stays off.");
+      render();
+      return;
+    }
     if (request == MIC_REQUEST) {
       if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) WakeWordService.start(this);
       else { JarvisPrefs.get(this).edit().putBoolean(JarvisPrefs.WAKE_WORD, false).apply(); toast("The wake word needs microphone permission."); }
