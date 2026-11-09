@@ -268,7 +268,8 @@ public final class CallAssistService extends Service {
     try {
       TelecomManager telecom = getSystemService(TelecomManager.class);
       if (telecom == null) { updateCard("This phone has no call service.", ""); return; }
-      if (telecom.getCallState() != TelecomManager.CALL_STATE_RINGING) return;  // already handled
+      // TelecomManager has no public ringing-state getter; acceptRingingCall is a no-op when the
+      // call is no longer ringing, so this is safe to call on every relayed notification.
       telecom.acceptRingingCall();
       ui.postDelayed(this::speakerOn, 900);
       updateCard("Call answered. " + CallCoach.statusLine(mode), "");
