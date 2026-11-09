@@ -32,7 +32,7 @@ final class ImageAttachment {
     try (InputStream in = context.getContentResolver().openInputStream(uri)) {
       int o = new ExifInterface(in).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
       rotation = o == ExifInterface.ORIENTATION_ROTATE_90 ? 90 : o == ExifInterface.ORIENTATION_ROTATE_180 ? 180 : o == ExifInterface.ORIENTATION_ROTATE_270 ? 270 : 0;
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     float scale = Math.min(1f, MAX_SIDE / (float) Math.max(bitmap.getWidth(), bitmap.getHeight()));
     Matrix matrix = new Matrix(); matrix.postScale(scale, scale); if (rotation != 0) matrix.postRotate(rotation);
     Bitmap fitted = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);

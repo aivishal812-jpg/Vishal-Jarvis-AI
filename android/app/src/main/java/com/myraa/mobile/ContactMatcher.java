@@ -49,7 +49,7 @@ public final class ContactMatcher {
         if (ph != null && !ph.trim().isEmpty()) extras.add(ph);
         found.add(new NameMatcher.Contact(name, phone, extras));
       }
-    } catch (SecurityException ignored) {}
+    } catch (SecurityException ignored) { /* nothing to do on release of a temporary object */ }
     return found;
   }
 
@@ -70,7 +70,7 @@ public final class ContactMatcher {
         if (list == null) { list = new ArrayList<>(); map.put(id, list); }
         list.add(nick);
       }
-    } catch (SecurityException ignored) {}
+    } catch (SecurityException ignored) { /* nothing to do on release of a temporary object */ }
     return map;
   }
 
@@ -87,7 +87,7 @@ public final class ContactMatcher {
         String phonetic = c.getString(1);
         if (id != null && phonetic != null && !phonetic.trim().isEmpty()) map.put(id, phonetic);
       }
-    } catch (Exception ignored) {}
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return map;
   }
 
@@ -98,7 +98,7 @@ public final class ContactMatcher {
     if (clean.matches("\\+[1-9][0-9]{7,14}")) return clean.substring(1);
     String country = "";
     try { country = activity.getSystemService(TelephonyManager.class).getNetworkCountryIso(); }
-    catch (Exception ignored) {}
+    catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     if (country == null || country.length() != 2) {
       String language = activity.getSharedPreferences("myraa.mobile.v1", 0).getString("language", "bn-IN");
       country = language.endsWith("IN") ? "IN" : "US";

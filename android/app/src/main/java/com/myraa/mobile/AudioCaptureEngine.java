@@ -70,7 +70,7 @@ public final class AudioCaptureEngine {
         };
         audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
       }
-    } catch (RuntimeException ignored) {}
+    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
     int[] sources = new int[]{
       MediaRecorder.AudioSource.VOICE_COMMUNICATION,
       MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -95,7 +95,7 @@ public final class AudioCaptureEngine {
             break outer;
           }
           trial.release();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
       }
     }
     if (created == null) {
@@ -127,15 +127,15 @@ public final class AudioCaptureEngine {
     }
     releaseEffects();
     if (recorder != null) {
-      try { recorder.stop(); } catch (RuntimeException ignored) {}
-      try { recorder.release(); } catch (RuntimeException ignored) {}
+      try { recorder.stop(); } catch (RuntimeException ignored) { /* a recorder that never started */ }
+      try { recorder.release(); } catch (RuntimeException ignored) { /* a recorder that is already released */ }
       recorder = null;
     }
     if (audioManager != null && focusListener != null) {
-      try { audioManager.abandonAudioFocus(focusListener); } catch (RuntimeException ignored) {}
+      try { audioManager.abandonAudioFocus(focusListener); } catch (RuntimeException ignored) { /* audio focus that was never taken */ }
     }
     if (audioManager != null && modeChanged) {
-      try { audioManager.setMode(previousMode); } catch (RuntimeException ignored) {}
+      try { audioManager.setMode(previousMode); } catch (RuntimeException ignored) { /* an audio mode the device refuses */ }
       modeChanged = false;
     }
     focusListener = null;
@@ -201,7 +201,7 @@ public final class AudioCaptureEngine {
     try {
       releaseEffects();
       if (recorder != null) {
-        try { recorder.release(); } catch (RuntimeException ignored) {}
+        try { recorder.release(); } catch (RuntimeException ignored) { /* a recorder that is already released */ }
       }
       Thread.sleep(80);
       if (!running.get()) return false;
@@ -251,9 +251,9 @@ public final class AudioCaptureEngine {
   }
 
   private void releaseEffects() {
-    try { if (suppressor != null) suppressor.release(); } catch (Throwable ignored) {}
-    try { if (echoCanceler != null) echoCanceler.release(); } catch (Throwable ignored) {}
-    try { if (gainControl != null) gainControl.release(); } catch (Throwable ignored) {}
+    try { if (suppressor != null) suppressor.release(); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
+    try { if (echoCanceler != null) echoCanceler.release(); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
+    try { if (gainControl != null) gainControl.release(); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
     suppressor = null; echoCanceler = null; gainControl = null;
   }
 
@@ -281,17 +281,17 @@ public final class AudioCaptureEngine {
         value.put("microphoneMute", audioManager.isMicrophoneMute());
         value.put("mode", audioManager.getMode());
         if (Build.VERSION.SDK_INT >= 28) {
-          try { value.put("microphones", audioManager.getMicrophones().size()); } catch (Exception ignored) {}
+          try { value.put("microphones", audioManager.getMicrophones().size()); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
         }
       }
-    } catch (Exception ignored) {}
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     lastDiagnostics = value;
     if (force) listener.onDiagnostics(value);
   }
 
   private void publishError(String message) {
     JSONObject value = new JSONObject();
-    try { value.put("nativeCapture", false).put("error", message); } catch (Exception ignored) {}
+    try { value.put("nativeCapture", false).put("error", message); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     lastDiagnostics = value;
     listener.onError(message);
   }

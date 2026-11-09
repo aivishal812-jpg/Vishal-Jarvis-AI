@@ -51,7 +51,7 @@ final class ReminderScheduler {
     try {
       if (step == 0) item.put("at", now + 60_000L);
       else { while (at <= now) at += step; item.put("at", at); }
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return item;
   }
   private ReminderScheduler() {}

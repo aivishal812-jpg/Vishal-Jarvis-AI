@@ -384,14 +384,14 @@ final class BackgroundActions {
     try {
       value.put("status", status).put("message", message);
       if (data != null) value.put("data", data);
-    } catch (Exception ignored) { }
+    } catch (ignored Exception) { /* tolerated: a device API refused; the caller reports the failure honestly */ }
     return value;
   }
 
   private static JSONObject obj(Object... values) {
     JSONObject value = new JSONObject();
     try { for (int i = 0; i + 1 < values.length; i += 2) value.put(String.valueOf(values[i]), values[i + 1]); }
-    catch (Exception ignored) { }
+    catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return value;
   }
 

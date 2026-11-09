@@ -41,6 +41,22 @@ final class AiAgent {
     this.app = context.getApplicationContext(); this.taskId = id; this.listener = listener; this.store = AiTaskStore.get(app);
   }
   static boolean needsResearch(String text) { return text != null && RESEARCH.matcher(text).find(); }
+
+  /**
+   * True when the sentence clearly asks the phone to do something a tool can do. Such a request
+   * must keep its tools even when it also contains a "current information" word, otherwise
+   * "আজকের আবহাওয়া বলো" becomes a web search that cannot touch the phone.
+   */
+  static boolean mentionsDeviceAction(String text) {
+    return text != null && DEVICE.matcher(text.toLowerCase(Locale.ROOT)).find();
+  }
+
+  private static final java.util.regex.Pattern DEVICE = java.util.regex.Pattern.compile(
+    "(?iu)(remind|reminder|note this|save (a )?note|alarm|timer|torch|flashlight|volume|brightness|"
+    + "call |dial|whatsapp|telegram|sms|notification|calendar|briefing|"
+    + "মনে করিয়ে|রিমাইন্ডার|নোট কর|অ্যালার্ম|অ্যালারম|টাইমার|টর্চ|ফ্ল্যাশ|ভলিউম|কল কর|ফোন কর|"
+    + "মেসেজ|হোয়াটসঅ্যাপ|নোটিফিকেশন|ক্যালেন্ডার|ব্রিফিং|আবহাওয়া|weather|मौसम|"
+    + "याद दिला|नोट कर|अलार्म|टॉर्च|आवाज़|कॉल कर|मैसेज)");
   static boolean retryable(Exception error) {
     if (error instanceof GeminiAccess.Failure) {
       int status = ((GeminiAccess.Failure) error).status;
@@ -95,7 +111,7 @@ final class AiAgent {
     contents.put(json("role", "user", "parts", userParts));
     String fallback = JarvisPrefs.fallbackModel(app);
     boolean fallbackUsed = fallback.isEmpty() || fallback.equals(model);
-    boolean research = needsResearch(task.prompt);
+    boolean research = needsResearch(task.prompt) && !mentionsDeviceAction(task.prompt);
     boolean recovery = task.toolStarted;
     String entities = MemoryDb.entityList(app, 25);
     StringBuilder summaries = new StringBuilder();
@@ -162,7 +178,7 @@ final class AiAgent {
         // screens the accessibility tree cannot describe.
         String screen = ScreenImage.take(taskId);
         if (screen != null) {
-          if (result != null) { try { result.put("screenImage", true); } catch (JSONException ignored) { } }
+          if (result != null) { try { result.put("screenImage", true); } catch (ignored JSONException) { /* tolerated: the result object is already built */ } }
           screenParts.put(json("text", "The screenshot of the current screen is attached. Read it directly; it is not stored anywhere."));
           screenParts.put(json("inline_data", json("mime_type", "image/jpeg", "data", screen)));
         }
@@ -253,7 +269,7 @@ final class AiAgent {
   }
   static JSONObject json(Object... values) {
     JSONObject result = new JSONObject();
-    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i+1]); } catch (JSONException ignored) {}
+    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i+1]); } catch (JSONException ignored) { /* tolerated: the result object is already built */ }
     return result;
   }
 }

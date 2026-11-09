@@ -48,7 +48,7 @@ final class CalendarReader {
         if (withId) item.put("id", c.getLong(5));
         out.put(item);
       }
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return out;
   }
 
@@ -80,7 +80,7 @@ final class CalendarReader {
         if (existing == null) found.put(id, new Target(id, c.getString(1) == null ? "(no title)" : c.getString(1), c.getLong(2), c.getLong(3)));
         else { existing.instances++; existing.lastEnd = Math.max(existing.lastEnd, c.getLong(3)); }
       }
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return new ArrayList<>(found.values());
   }
 

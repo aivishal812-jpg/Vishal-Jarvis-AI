@@ -45,6 +45,6 @@ public final class ReminderReceiver extends BroadcastReceiver {
         .setStyle(new Notification.BigTextStyle().bigText(item.optString("text")))
         .setCategory(Notification.CATEGORY_REMINDER).setAutoCancel(true).setContentIntent(open).build();
       manager.notify(item.optString("id").hashCode(), notification);
-    } catch (RuntimeException ignored) { }
+    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
   }
 }

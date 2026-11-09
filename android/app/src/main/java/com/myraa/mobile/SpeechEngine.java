@@ -105,7 +105,7 @@ final class SpeechEngine {
   }
 
   void shutdown() {
-    try { if (tts != null) tts.shutdown(); } catch (RuntimeException ignored) { }
+    try { if (tts != null) tts.shutdown(); } catch (RuntimeException ignored) { /* a connection that is already closed */ }
   }
 
   /**

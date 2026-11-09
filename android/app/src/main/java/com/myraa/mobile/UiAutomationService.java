@@ -211,7 +211,7 @@ public final class UiAutomationService extends AccessibilityService {
     try {
       AccessibilityNodeInfo root = service.getRootInActiveWindow();
       if (root == null) {
-        try { out.put("status", "unavailable").put("message", "No readable window is open right now."); } catch (Exception ignored) { }
+        try { out.put("status", "unavailable").put("message", "No readable window is open right now."); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
         return out;
       }
       String pkg = root.getPackageName() == null ? "" : root.getPackageName().toString();
@@ -227,7 +227,7 @@ public final class UiAutomationService extends AccessibilityService {
         if (text.length() + label.length() + 1 > maxChars) break;
         if (node.isEditable() && node.isEnabled()) {
           fields.append("• ").append(label).append(" (empty field)\n");
-          try { editable.put(new JSONObject().put("hint", label).put("index", editable.length())); } catch (Exception ignored) { }
+          try { editable.put(new JSONObject().put("hint", label).put("index", editable.length())); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
         } else {
           text.append(label).append('\n');
           lines++;
@@ -242,7 +242,7 @@ public final class UiAutomationService extends AccessibilityService {
         .put("message", text.length() == 0 ? "I could not read any text on this screen." : "Read " + lines + " line(s) from " + appName(pkg) + ".");
       if (withNodes) out.put("nodeCount", nodes.size());
     } catch (Exception failure) {
-      try { out.put("status", "failed").put("message", "The screen could not be read right now."); } catch (Exception ignored) { }
+      try { out.put("status", "failed").put("message", "The screen could not be read right now."); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     }
     return out;
   }
@@ -283,7 +283,7 @@ public final class UiAutomationService extends AccessibilityService {
         .put("sender", sender).put("lastMessage", last)
         .put("message", last.isEmpty() ? "I could not find a message on this screen." : "Latest message" + (sender.isEmpty() ? "" : " in " + sender) + ": " + last);
     } catch (Exception failure) {
-      try { out.put("status", "failed").put("message", "The conversation could not be read."); } catch (Exception ignored) { }
+      try { out.put("status", "failed").put("message", "The conversation could not be read."); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     }
     return out;
   }
@@ -321,7 +321,7 @@ public final class UiAutomationService extends AccessibilityService {
           ? "I could not fill any field on this screen. Nothing was typed."
           : "Filled " + filled + " field(s). Review them, then press Submit yourself — I never submit a form.");
     } catch (Exception failure) {
-      try { out.put("status", "failed").put("message", "The form could not be filled."); } catch (Exception ignored) { }
+      try { out.put("status", "failed").put("message", "The form could not be filled."); } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     }
     return out;
   }
@@ -383,7 +383,7 @@ public final class UiAutomationService extends AccessibilityService {
       }
       out.put("width", metrics.widthPixels).put("height", metrics.heightPixels)
         .put("density", metrics.density).put("activePackage", activePackage());
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return out;
   }
 
@@ -418,14 +418,14 @@ public final class UiAutomationService extends AccessibilityService {
     arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.text);
     try {
       if (composer.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments) && length(composer.getText()) > 0) return true;
-    } catch (RuntimeException ignored) { }
+    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
     // Fallback for apps that ignore ACTION_SET_TEXT: paste from the clipboard.
     try {
       ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
       clipboard.setPrimaryClip(ClipData.newPlainText("Vishal Jarvis", current.text));
       composer.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
       if (composer.performAction(AccessibilityNodeInfo.ACTION_PASTE)) return true;
-    } catch (RuntimeException ignored) { }
+    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
     return false;
   }
 
@@ -469,7 +469,7 @@ public final class UiAutomationService extends AccessibilityService {
     try {
       if (filter == null || filter.accept(node)) out.add(node);
       for (int i = 0; i < node.getChildCount(); i++) collect(node.getChild(i), out, filter, depth + 1);
-    } catch (RuntimeException ignored) { }
+    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
   }
 
   private static String lower(CharSequence value) {

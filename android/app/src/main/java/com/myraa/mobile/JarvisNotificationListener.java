@@ -31,7 +31,7 @@ public final class JarvisNotificationListener extends NotificationListenerServic
   @Override public void onListenerConnected() {
     instance = this;
     try { StatusBarNotification[] active = getActiveNotifications(); if (active != null) for (StatusBarNotification n : active) add(n); }
-    catch (RuntimeException ignored) { }
+    catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
   }
   @Override public void onListenerDisconnected() { instance = null; }
   @Override public void onNotificationPosted(StatusBarNotification sbn) {
@@ -60,7 +60,7 @@ public final class JarvisNotificationListener extends NotificationListenerServic
       if (missed && ProactiveScheduler.missedEnabled(this)) {
         ProactiveScheduler.notify(this, 4208, "Missed call", title.isEmpty() ? "Tap to see who called." : title);
       }
-    } catch (RuntimeException ignored) { }
+    } catch (ignored RuntimeException) { /* tolerated: another app’s notification may be malformed */ }
   }
 
   private void add(StatusBarNotification sbn) {
@@ -182,7 +182,7 @@ public final class JarvisNotificationListener extends NotificationListenerServic
         view.put("title", "One-time code from " + item.optString("app"))
           .put("text", "A code arrived. It was left hidden on purpose; open the app to read it.")
           .put("app", item.optString("app"));
-      } catch (Exception ignored) { }
+      } catch (ignored Exception) { /* tolerated: another app’s notification may be malformed */ }
       out.put(view);
       if (out.length() >= limit) break;
     }
@@ -196,7 +196,7 @@ public final class JarvisNotificationListener extends NotificationListenerServic
       value.put("app", item.optString("app")).put("title", item.optString("title"))
         .put("text", item.optString("text")).put("at", item.optLong("at"))
         .put("category", item.optString("category")).put("important", important(item));
-    } catch (Exception ignored) { }
+    } catch (ignored Exception) { /* tolerated: another app’s notification may be malformed */ }
     return value;
   }
 

@@ -36,7 +36,7 @@ public final class GeminiAccess {
           if (detail != null && !detail.optString("reason").isEmpty()) { reason = detail.optString("reason"); break; }
         }
       }
-    } catch (JSONException ignored) {}
+    } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
     Map<String,String> known = new LinkedHashMap<>();
     known.put("ACCOUNT_STATE_INVALID", "Google says the service account linked to this key is disabled or deleted. Create a key linked to an active service account in Google AI Studio, or have your project administrator restore it.");
     known.put("CONSUMER_SUSPENDED", "Google says this key's project or consumer is suspended. Resolve its status in Google AI Studio or Google Cloud, then check the key again. Changing Vishal Jarvis's model cannot repair a suspended project.");

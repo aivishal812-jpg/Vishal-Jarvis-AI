@@ -151,7 +151,7 @@ final class ProActions {
 
   // ------------------------------------------------------------ notifications & calendar
   private void notificationAccess(String id) {
-    try { activity.startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); } catch (RuntimeException ignored) { }
+    try { activity.startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ }
     done.finish(id, "permission_required", "Turn on \"Vishal Jarvis\" in the Notification access screen I just opened, then ask again.", null);
   }
   private void readNotifications(String id, JSONObject args) throws Exception {
@@ -247,7 +247,7 @@ final class ProActions {
   private static JSONObject obj(Object... values) {
     JSONObject value = new JSONObject();
     try { for (int i = 0; i + 1 < values.length; i += 2) value.put(String.valueOf(values[i]), values[i + 1]); }
-    catch (Exception ignored) { }
+    catch (Exception ignored) { /* nothing to do on release of a temporary object */ }
     return value;
   }
 
@@ -374,11 +374,18 @@ final class ProActions {
   }
 
   // ------------------------------------------------------------ find my phone
+  private int alarmVolumeBefore = -1;
+
   private void ring(String id) {
     try {
-      if (ringing != null && ringing.isPlaying()) { ringing.stop(); ringing = null; done.finish(id, "stopped", "Stopped ringing.", null); return; }
+      if (ringing != null && ringing.isPlaying()) { stopRinging(); done.finish(id, "stopped", "Stopped ringing.", null); return; }
       AudioManager audio = (AudioManager) activity.getSystemService(android.content.Context.AUDIO_SERVICE);
-      if (audio != null) audio.setStreamVolume(AudioManager.STREAM_ALARM, audio.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);
+      // Raising the alarm stream is the only way to be heard, but the user's own alarm volume
+      // must be put back afterwards; leaving it at maximum was a real bug.
+      if (audio != null) {
+        if (alarmVolumeBefore < 0) alarmVolumeBefore = audio.getStreamVolume(AudioManager.STREAM_ALARM);
+        audio.setStreamVolume(AudioManager.STREAM_ALARM, audio.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);
+      }
       android.net.Uri tone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
       if (tone == null) tone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
       ringing = RingtoneManager.getRingtone(activity, tone);
@@ -386,10 +393,25 @@ final class ProActions {
       ringing.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
       ringing.play();
       final Ringtone mine = ringing;
-      main.postDelayed(() -> { if (mine.isPlaying()) mine.stop(); }, 20_000);
+      main.postDelayed(() -> { if (mine.isPlaying()) stopRinging(); else restoreAlarmVolume(); }, 20_000);
       done.finish(id, "ringing", "Ringing loudly for 20 seconds so you can find the phone. Say ring phone again to stop.", null);
     } catch (RuntimeException e) { done.finish(id, "failed", "Android could not play the alarm sound.", null); }
   }
 
-  void close() { network.shutdownNow(); if (ringing != null) { try { ringing.stop(); } catch (RuntimeException ignored) { } } }
+  /** Stops the ring tone and puts the alarm volume back where the user had it. */
+  private void stopRinging() {
+    if (ringing != null) { try { ringing.stop(); } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ } ringing = null; }
+    restoreAlarmVolume();
+  }
+
+  private void restoreAlarmVolume() {
+    if (alarmVolumeBefore < 0) return;
+    try {
+      AudioManager audio = (AudioManager) activity.getSystemService(android.content.Context.AUDIO_SERVICE);
+      if (audio != null) audio.setStreamVolume(AudioManager.STREAM_ALARM, alarmVolumeBefore, 0);
+    } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ }
+    alarmVolumeBefore = -1;
+  }
+
+  void close() { network.shutdownNow(); stopRinging(); }
 }

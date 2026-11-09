@@ -20,12 +20,27 @@ final class AiTaskStore extends SQLiteOpenHelper {
     }
   }
   private final Context app;
-  private AiTaskStore(Context context) { super(context, "ai_tasks.db", null, 1); app = context; }
+  private AiTaskStore(Context context) { super(context, "ai_tasks.db", null, 4); app = context; }
   @Override public void onCreate(SQLiteDatabase db) {
     db.execSQL("CREATE TABLE tasks (_id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE, prompt TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, tool_started INTEGER NOT NULL DEFAULT 0, result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '')");
     db.execSQL("CREATE INDEX task_status_order ON tasks(status, _id)");
   }
-  @Override public void onUpgrade(SQLiteDatabase db, int from, int to) { throw new IllegalStateException("Unsupported task database upgrade"); }
+  /**
+   * Additive migrations only. Throwing here used to crash the app for anyone who upgraded from an
+   * older build, because SQLite calls this as soon as the version number changes.
+   */
+  @Override public void onUpgrade(SQLiteDatabase db, int from, int to) {
+    if (from < 2) {
+      try { db.execSQL("ALTER TABLE tasks ADD COLUMN tool_started INTEGER NOT NULL DEFAULT 0"); } catch (RuntimeException alreadyThere) { }
+    }
+    if (from < 3) {
+      try { db.execSQL("ALTER TABLE tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"); } catch (RuntimeException alreadyThere) { }
+    }
+    if (from < 4) {
+      try { db.execSQL("ALTER TABLE tasks ADD COLUMN result TEXT NOT NULL DEFAULT ''"); } catch (RuntimeException alreadyThere) { }
+      try { db.execSQL("ALTER TABLE tasks ADD COLUMN error TEXT NOT NULL DEFAULT ''"); } catch (RuntimeException alreadyThere) { }
+    }
+  }
 
   static final class Task {
     final long number; final String id, prompt, status, error; final boolean toolStarted; final int attempts;

@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
             if (locale != null && "bn".equals(locale.getLanguage())) { bengaliVoice = locale; break; }
           }
         }
-      } catch (RuntimeException ignored) { }
+      } catch (ignored RuntimeException) { /* tolerated: the window may already be gone */ }
     });
     mobileActions=new MobileActions(this,(id,result)->{
       ActionWaiter waiter=actionWaiters.remove(id);
@@ -336,7 +336,7 @@ public class MainActivity extends Activity {
         "calendar", granted(Manifest.permission.READ_CALENDAR), "homeCity", JarvisPrefs.homeCity(this),
         "fallbackModel", JarvisPrefs.fallbackModel(this), "reminders", ReminderStore.all(this).length(), "notes", NoteStore.all(this).length(),
         "imageAttached", ImageAttachment.hasStaged()));
-    } catch (JSONException ignored) { }
+    } catch (ignored JSONException) { /* tolerated: the window may already be gone */ }
 
     try {
       JSONArray pending = new JSONArray();
@@ -344,9 +344,9 @@ public class MainActivity extends Activity {
       value.put("pending", pending);
       AiTaskStore.Task failed = AiTaskStore.get(this).latestFailure();
       if (failed != null) value.put("lastFailedTask", json("id", failed.id, "text", failed.prompt, "message", failed.error));
-    } catch (Exception ignored) { }
+    } catch (ignored Exception) { /* tolerated: the window may already be gone */ }
     try { value.put("history", new JSONArray(prefs.getString("history", "[]"))); } catch (Exception ignored) { try { value.put("history", new JSONArray()); } catch (Exception unused) {} }
-    try { value.put("audio", audioCapture == null ? new JSONObject() : audioCapture.diagnostics()); } catch (Exception ignored) {}
+    try { value.put("audio", audioCapture == null ? new JSONObject() : audioCapture.diagnostics()); } catch (Exception ignored) { /* tolerated: the window may already be gone */ }
     return value;
   }
 
@@ -610,8 +610,7 @@ public class MainActivity extends Activity {
           ComponentName sender = new ComponentName(MainActivity.this, UiAutomationService.class);
           Intent direct = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
           try { direct.putExtra(":settings:fragment_args_key", sender.flattenToString());
-            direct.putExtra(":settings:show_fragment_args", android.os.Bundle.EMPTY);
-          } catch (RuntimeException ignored) {}
+            direct.putExtra(":settings:show_fragment_args", android.os.Bundle.EMPTY); } catch (RuntimeException ignored) { /* tolerated: the window may already be gone */ }
           try { startActivity(direct); }
           catch (RuntimeException e) { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
           emit(json("type", "permissions", "state", state(), "message",
@@ -826,11 +825,11 @@ public class MainActivity extends Activity {
   }
   private static JSONObject json(Object... values) {
     JSONObject result = new JSONObject();
-    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i+1]); } catch (JSONException ignored) {}
+    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i+1]); } catch (JSONException ignored) { /* tolerated: the window may already be gone */ }
     return result;
   }
   private void emit(JSONObject event) { runOnUiThread(() -> { if (web != null && !isFinishing()) web.evaluateJavascript("window.MyraaEvents&&window.MyraaEvents(" + event.toString() + ")", null); }); }
-  private void error(String service, String message, String id) { JSONObject value = json("type", "error", "service", service, "message", message); if (id != null) try { value.put("id", id); } catch (JSONException ignored) {} emit(value); }
+  private void error(String service, String message, String id) { JSONObject value = json("type", "error", "service", service, "message", message); if (id != null) try { value.put("id", id); } catch (JSONException ignored) { /* tolerated: the window may already be gone */ } emit(value); }
 
   private void emitNativeAudio(byte[] pcm, boolean speech) {
     if (web == null || isFinishing() || audioEmitBusy) return;

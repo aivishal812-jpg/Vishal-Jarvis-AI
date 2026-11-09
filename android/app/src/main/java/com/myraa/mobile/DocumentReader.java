@@ -97,7 +97,7 @@ final class DocumentReader {
         int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
         if (index >= 0) { String name = cursor.getString(index); if (name != null && !name.isEmpty()) return name; }
       }
-    } catch (RuntimeException ignored) { }
+    } catch (ignored RuntimeException) { /* tolerated: a stream that cannot be inflated is not a text stream */ }
     String path = uri.getLastPathSegment();
     return path == null ? "document" : path;
   }

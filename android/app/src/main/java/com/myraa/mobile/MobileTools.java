@@ -172,15 +172,15 @@ public final class MobileTools {
       JSONArray list = new JSONArray();
       for (String field : required) list.put(field);
       parameters.put("required", list);
-    } catch (JSONException ignored) { }
+    } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
     JSONObject value = new JSONObject();
-    try { value.put("name", name).put("description", description).put("parameters", parameters); } catch (JSONException ignored) { }
+    try { value.put("name", name).put("description", description).put("parameters", parameters); } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
     return value;
   }
 
   private static JSONObject json(Object... values) {
     JSONObject value = new JSONObject();
-    try { for (int i = 0; i < values.length; i += 2) value.put(String.valueOf(values[i]), values[i + 1]); } catch (JSONException ignored) { }
+    try { for (int i = 0; i < values.length; i += 2) value.put(String.valueOf(values[i]), values[i + 1]); } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
     return value;
   }
 

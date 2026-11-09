@@ -181,7 +181,7 @@ public final class VoiceCommandActivity extends Activity {
   }
 
   private void releaseRecognizer() {
-    if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (RuntimeException ignored) { } recognizer = null; }
+    if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (ignored RuntimeException) { /* tolerated: the popup may already be closed */ } recognizer = null; }
   }
 
   // ------------------------------------------------------------------ running a command
@@ -312,7 +312,7 @@ public final class VoiceCommandActivity extends Activity {
   private void close() {
     if (closed) return;
     closed = true; cancelled = true;
-    HttpsURLConnection c = connection; if (c != null) try { c.disconnect(); } catch (RuntimeException ignored) { }
+    HttpsURLConnection c = connection; if (c != null) try { c.disconnect(); } catch (ignored RuntimeException) { /* tolerated: the popup may already be closed */ }
     releaseRecognizer();
     finish();
   }
@@ -332,17 +332,17 @@ public final class VoiceCommandActivity extends Activity {
     active = false; closed = true; cancelled = true;
     releaseRecognizer();
     BeepMuter.unmuteLater(500);
-    if (speech != null) { try { speech.stop(); } catch (RuntimeException ignored) { } }
-    if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (RuntimeException ignored) { } }
+    if (speech != null) { try { speech.stop(); } catch (ignored RuntimeException) { /* tolerated: the popup may already be closed */ } }
+    if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (ignored RuntimeException) { /* tolerated: the popup may already be closed */ } }
     AiTaskEvents.speaking = false;
-    try { actions.close(); } catch (RuntimeException ignored) { }
+    try { actions.close(); } catch (ignored RuntimeException) { /* tolerated: the popup may already be closed */ }
     worker.shutdownNow();
     super.onDestroy();
   }
 
   private static JSONObject json(Object... values) {
     JSONObject result = new JSONObject();
-    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i + 1]); } catch (JSONException ignored) { }
+    try { for (int i = 0; i < values.length; i += 2) result.put(String.valueOf(values[i]), values[i + 1]); } catch (ignored JSONException) { /* tolerated: the popup may already be closed */ }
     return result;
   }
 }

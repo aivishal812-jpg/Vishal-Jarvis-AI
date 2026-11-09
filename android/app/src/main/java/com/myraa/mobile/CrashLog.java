@@ -16,7 +16,7 @@ final class CrashLog {
     final Context app = context.getApplicationContext();
     final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
     Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
-      try { record(app, thread, error); } catch (Throwable ignored) { }
+      try { record(app, thread, error); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
       if (previous != null) previous.uncaughtException(thread, error);
     });
   }
@@ -32,7 +32,7 @@ final class CrashLog {
     String combined = previous + text;
     if (combined.length() > MAX_BYTES) combined = combined.substring(combined.length() - MAX_BYTES);
     try (OutputStream stream = new FileOutputStream(file(context))) { stream.write(combined.getBytes(StandardCharsets.UTF_8)); }
-    catch (IOException ignored) { }
+    catch (IOException ignored) { /* nothing to do on release of a temporary object */ }
   }
   static String read(Context context) {
     File f = file(context);

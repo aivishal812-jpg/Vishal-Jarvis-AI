@@ -43,14 +43,14 @@ public final class ContactAliasStore {
         String name = json.optString(key, "");
         if (!key.isEmpty() && !name.isEmpty()) spokenToName.put(key, name);
       }
-    } catch (JSONException ignored) {}
+    } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
   }
 
   private void persist() {
     JSONObject json = new JSONObject();
     try {
       for (Map.Entry<String, String> e : spokenToName.entrySet()) json.put(e.getKey(), e.getValue());
-    } catch (JSONException ignored) {}
+    } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ }
     prefs.edit().putString(KEY, json.toString()).apply();
   }
 }

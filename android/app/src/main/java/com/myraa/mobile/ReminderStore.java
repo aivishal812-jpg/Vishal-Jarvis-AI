@@ -39,7 +39,7 @@ final class ReminderStore {
     JSONArray list = all(context);
     for (int i = 0; i < list.length(); i++) {
       JSONObject o = list.optJSONObject(i);
-      if (o != null && o.optString("id").equals(item.optString("id"))) { try { list.put(i, item); } catch (JSONException ignored) { } }
+      if (o != null && o.optString("id").equals(item.optString("id"))) { try { list.put(i, item); } catch (JSONException ignored) { /* nothing to do on release of a temporary object */ } }
     }
     save(context, list);
   }
