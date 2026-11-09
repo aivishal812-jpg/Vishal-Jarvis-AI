@@ -169,7 +169,7 @@ app.innerHTML = `
         <option value="balanced">Medium · balanced</option>
         <option value="high">High · sharper</option>
       </select></label>
-      <label class="check"><input id="spoken" type="checkbox"> Read text replies aloud with Android voice</label>
+      <label class="check"><input id="spoken" type="checkbox" checked> Read replies aloud with the Android voice (on by default)</label>
       <div class="button-row"><button id="save" class="primary">Save settings</button><button id="check-connection">Check key &amp; model</button></div>
       <p id="settings-status" class="muted" role="status" aria-live="polite"></p>
     </details>
@@ -458,7 +458,7 @@ function refreshSettings() {
   el<HTMLInputElement>('live-model').value = state.liveModel || 'gemini-3.1-flash-live-preview';
   el<HTMLSelectElement>('quality').value = state.quality;
   el<HTMLSelectElement>('language').value = state.language;
-  el<HTMLInputElement>('spoken').checked = state.spokenReplies === true;
+  el<HTMLInputElement>('spoken').checked = state.spokenReplies !== false;
   el<HTMLSelectElement>('text-size').value = String(state.textScale || 100);
   el('about').textContent = `Vishal Jarvis for Android ${state.version || ''} · created by Vishal · package com.myraa.mobile`.trim();
   refreshKeyStatus();
@@ -616,7 +616,12 @@ window.MyraaEvents = event => {
   }
   if (event.type === 'auto-voice') { autoVoice(); return; }
   if (event.type === 'clipboard') { notice(event.message || 'Copied.'); return; }
-  if (event.type === 'capability') { notice(event.message || ''); return; }
+  if (event.type === 'capability') {
+    notice(event.message || '');
+    // A voice problem is actionable, so show it as a plain message with the settings hint.
+    if (event.tts === false) notice((event.message || '') + ' Settings → Jarvis Pro → "Speak replies" and Android text-to-speech settings.');
+    return;
+  }
   if (event.type === 'state') { state = event.state; refreshSettings(); renderQuickActions(); renderHistory(); return; }
   if (event.type === 'queued') {
     if (event.id === requestId) { busy = false; pendingText = ''; finishStream(); }

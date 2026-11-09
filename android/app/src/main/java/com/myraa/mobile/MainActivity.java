@@ -71,6 +71,7 @@ public class MainActivity extends Activity {
   private SharedPreferences prefs;
   private TextToSpeech tts;
   private SpeechEngine speech;
+  private String pendingSpeech;
   private java.util.Locale bengaliVoice;
   private volatile boolean ttsReady;
   private volatile boolean foreground;
@@ -90,7 +91,7 @@ public class MainActivity extends Activity {
     if ("task-state".equals(type)) emit(json("type", "state", "state", state()));
     else {
       emit(event);
-      if ("reply".equals(type) && prefs != null && prefs.getBoolean("spokenReplies", false) && foreground) speakText(event.optString("text"));
+      if ("reply".equals(type) && prefs != null && spokenRepliesOn() && foreground) speakText(event.optString("text"));
     }
   };
   private int rendererFailures;
@@ -107,23 +108,14 @@ public class MainActivity extends Activity {
     catch (Exception ignored) { personality = "You are Vishal Jarvis, created by Vishal. Default to natural West Bengal Indian Bengali. Be honest about your capabilities."; }
     tts = new TextToSpeech(this, status -> {
       ttsReady = status == TextToSpeech.SUCCESS;
-      if (!ttsReady) return;
-      speech = new SpeechEngine(tts);
-      speech.setListener(new SpeechEngine.Listener() {
-        @Override public void onStart() { AiTaskEvents.speaking = true; emit(json("type", "speech", "active", true)); }
-        @Override public void onDone() { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
-        @Override public void onError(String message) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); error("tts", message, null); }
-      });
-      // Pick the best Bengali voice: the default one on many devices is the English engine
-      // reading Bengali letters, which sounds wrong. Prefer a Bengali voice, else network.
-      try {
-        java.util.Set<java.util.Locale> locales = tts.getAvailableLanguages();
-        if (locales != null) {
-          for (java.util.Locale locale : locales) {
-            if (locale != null && "bn".equals(locale.getLanguage())) { bengaliVoice = locale; break; }
-          }
-        }
-      } catch (RuntimeException ignored) { /* tolerated: the window may already be gone */ }
+      if (!ttsReady) {
+        emit(json("type", "capability", "tts", false,
+          "message", "Text-to-speech did not start. The reply still appears on screen; install or update \"Speech Recognition & Synthesis\" and try again."));
+        return;
+      }
+      attachSpeechEngine();
+      String queued = pendingSpeech; pendingSpeech = null;
+      if (queued != null) speakText(queued);
     });
     mobileActions=new MobileActions(this,(id,result)->{
       ActionWaiter waiter=actionWaiters.remove(id);
@@ -324,7 +316,7 @@ public class MainActivity extends Activity {
       "sms", granted(Manifest.permission.SEND_SMS),
       "accessibility", UiAutomationService.available());
     JSONObject value = json("model", prefs.getString("model", "gemini-3.5-flash"), "quality", prefs.getString("quality", "low"),
-      "language", prefs.getString("language", "bn-IN"), "spokenReplies", prefs.getBoolean("spokenReplies", false),
+      "language", prefs.getString("language", "bn-IN"), "spokenReplies", spokenRepliesOn(),
       "keyConfigured", prefs.contains("keyCipher"), "keyVerified", prefs.getLong("keyVerifiedAt", 0) > 0 && prefs.getString("verifiedModel", "").equals(prefs.getString("model", "gemini-3.5-flash")),
       "providerErrorCode", prefs.getString("providerErrorCode", ""), "ttsAvailable", ttsReady, "version", BuildInfo.VERSION,
       "textScale", prefs.getInt("textScale", 100), "pendingTasks", AiTaskStore.get(this).pendingCount(),
@@ -410,7 +402,7 @@ public class MainActivity extends Activity {
               if (!checkOnly) {
                 if (!key.isEmpty()) writeKey(edit, key);
                 edit.putString("model", model).putString("quality", quality).putString("language", language)
-                  .putBoolean("spokenReplies", input.optBoolean("spokenReplies", false))
+                  .putBoolean("spokenReplies", input.optBoolean("spokenReplies", true))
                   .putString("liveModel", liveModel);
               }
               if (verified && (!checkOnly || key.isEmpty())) edit.putLong("keyVerifiedAt", System.currentTimeMillis()).putString("verifiedModel", model).remove("providerErrorCode");
@@ -715,7 +707,7 @@ public class MainActivity extends Activity {
           AiTaskCoordinator.cancelJobOnly(MainActivity.this, current);
           if (!foreground) AiTaskNotifications.finished(MainActivity.this, current, true);
           emit(json("type", "reply", "id", id, "text", answer));
-          if (prefs.getBoolean("spokenReplies", false)) speakText(answer);
+          if (spokenRepliesOn()) speakText(answer);
         }
       } catch (Exception failure) {
         if (generation.get() == token && !store.isCancelled(id)) {
@@ -791,21 +783,78 @@ public class MainActivity extends Activity {
     }
   }
 
+  /**
+   * Speaks a reply, out loud, with a chain of fallbacks.
+   *
+   * A missing Bengali voice used to make the app completely silent: the language was set, it
+   * failed, and the method returned. Now every usable voice is tried in order (the chosen
+   * language, a Bengali voice the engine reports, Indian English, plain English), and if none of
+   * them can be set the reply is spoken with the engine's own default voice — reading Bengali
+   * text in an English voice is imperfect, but silence is worse. The screen always shows the text
+   * as well, and the UI is told which voice was used so the user can see why it sounds different.
+   */
   private void speakText(String text) {
     runOnUiThread(() -> {
       if (!foreground) return;
-      if (!ttsReady || tts == null || speech == null) { error("tts", "No ready Android text-to-speech engine is available. Text chat still works.", null); return; }
+      if (text == null || text.trim().isEmpty()) return;
+      if (!ttsReady || tts == null || speech == null) {
+        // Startup race: remember the sentence and speak it as soon as the engine is ready.
+        pendingSpeech = text;
+        if (tts == null) {
+          tts = new TextToSpeech(this, status -> {
+            ttsReady = status == TextToSpeech.SUCCESS;
+            if (!ttsReady) { error("tts", "No ready Android text-to-speech engine is available. The reply is on screen. Install or update \"Speech Recognition & Synthesis\" from the Play Store.", null); return; }
+            attachSpeechEngine();
+            String queued = pendingSpeech; pendingSpeech = null;
+            if (queued != null) speakText(queued);
+          });
+        }
+        return;
+      }
+      pendingSpeech = null;
       String tag = prefs.getString("language", "bn-IN");
       Locale wanted = Locale.forLanguageTag(tag);
-      int language = tts.setLanguage(wanted);
-      if ((language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED)
-          && "bn".equals(wanted.getLanguage()) && bengaliVoice != null) {
-        language = tts.setLanguage(bengaliVoice);
+      Locale[] candidates = new Locale[]{ wanted, bengaliVoice, Locale.forLanguageTag("bn-BD"), Locale.forLanguageTag("bn-IN"),
+        Locale.forLanguageTag("en-IN"), Locale.US };
+      java.util.List<String> tried = new java.util.ArrayList<>();
+      boolean ready = false;
+      for (Locale candidate : candidates) {
+        if (candidate == null) continue;
+        if (tried.contains(candidate.toLanguageTag())) continue;
+        tried.add(candidate.toLanguageTag());
+        int result = tts.setLanguage(candidate);
+        if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) { ready = true; break; }
       }
-      if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) { error("tts", "This speech engine does not have the selected language installed. The text is still on screen.", null); return; }
+      if (!ready) {
+        // Last resort: keep whatever voice the engine has, instead of saying nothing.
+        emit(json("type", "capability", "tts", false,
+          "message", "No installed voice matches this language, so Jarvis is speaking with the phone's default voice. For natural Bengali, install a Bengali voice in Android Settings → System → Languages → Text-to-speech output."));
+      }
       // Whole reply, any length: SpeechEngine queues it in sentence-sized chunks.
-      if (!speech.speak(text) && text != null && !text.trim().isEmpty()) error("tts", "The installed speech engine could not start.", null);
+      if (!speech.speak(text)) error("tts", "The installed speech engine could not start. The reply is on screen.", null);
     });
+  }
+
+  /** Replies are spoken unless the user turned it off; a reply nobody hears looks like a bug. */
+  private boolean spokenRepliesOn() { return prefs == null || prefs.getBoolean("spokenReplies", true); }
+
+  /** Builds the SpeechEngine once the TTS object is ready (shared by onCreate and the retry path). */
+  private void attachSpeechEngine() {
+    if (tts == null || speech != null) return;
+    speech = new SpeechEngine(tts);
+    speech.setListener(new SpeechEngine.Listener() {
+      @Override public void onStart() { AiTaskEvents.speaking = true; emit(json("type", "speech", "active", true)); }
+      @Override public void onDone() { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
+      @Override public void onError(String message) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); error("tts", message, null); }
+    });
+    try {
+      java.util.Set<java.util.Locale> locales = tts.getAvailableLanguages();
+      if (locales != null) {
+        for (java.util.Locale locale : locales) {
+          if (locale != null && "bn".equals(locale.getLanguage())) { bengaliVoice = locale; break; }
+        }
+      }
+    } catch (RuntimeException ignored) { /* tolerated: the window may already be gone */ }
   }
 
   private void stopSpeaking() {
