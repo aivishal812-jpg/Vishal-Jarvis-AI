@@ -48,6 +48,12 @@ public final class JarvisNotificationListener extends NotificationListenerServic
       if (sbn == null || getPackageName().equals(sbn.getPackageName())) return;
       Notification n = sbn.getNotification();
       if (n == null) return;
+      // A ringing call: tell the call assistant, which is the only component allowed to answer.
+      // This is also how the assistant starts on phones that refuse the call-state API.
+      if (Notification.CATEGORY_CALL.equals(n.category) || "call".equals(n.category)) {
+        sendBroadcast(new Intent(CallAssistService.ACTION_RINGING).setPackage(getPackageName()));
+        return;
+      }
       Bundle extras = n.extras;
       String title = text(extras, Notification.EXTRA_TITLE), body = text(extras, Notification.EXTRA_TEXT);
       if (body.isEmpty()) body = text(extras, Notification.EXTRA_BIG_TEXT);

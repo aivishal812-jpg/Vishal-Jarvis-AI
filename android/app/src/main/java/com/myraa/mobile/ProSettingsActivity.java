@@ -11,6 +11,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.telecom.TelecomManager;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
@@ -31,7 +32,7 @@ import java.util.Iterator;
 
 /** Native settings screen for the Jarvis Pro features (wake word, lock, permissions, backup, crash log). */
 public final class ProSettingsActivity extends Activity {
-  private static final int MIC_REQUEST = 201, CAL_REQUEST = 202, EXPORT_REQUEST = 203, IMPORT_REQUEST = 204, LOCATION_REQUEST = 205;
+  private static final int MIC_REQUEST = 201, CAL_REQUEST = 202, EXPORT_REQUEST = 203, IMPORT_REQUEST = 204, LOCATION_REQUEST = 205, CALL_REQUEST = 206;
   private static final String[] BACKUP_KEYS = {"memory", "language", "model", "liveModel", "quality", "spokenReplies", "textScale",
     "contactAliasesV1", JarvisPrefs.WAKE_WORD, JarvisPrefs.SECURE_ACTIONS, JarvisPrefs.FALLBACK_MODEL, JarvisPrefs.HOME_CITY,
     NoteStore.KEY, ReminderStore.KEY};
@@ -82,6 +83,39 @@ public final class ProSettingsActivity extends Activity {
     }
     wake.addView(button((Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(this) ? "On: " : "Off: ") + "Open Jarvis instantly when called (display over other apps)",
       () -> open(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())))));
+
+    LinearLayout calls = card("Call assistant", callBody());
+    calls.addView(toggle("Take part in calls (card + microphone)", JarvisPrefs.callMode(this) != CallCoach.Mode.OFF, on -> {
+      prefs.edit().putString(JarvisPrefs.CALL_ASSIST, on ? (JarvisPrefs.callMode(this) == CallCoach.Mode.OFF ? "suggest" : JarvisPrefs.callMode(this).key) : "off").apply();
+      if (on) {
+        if (Build.VERSION.SDK_INT >= 34 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+          requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC_REQUEST);
+        } else CallAssistService.start(this);
+      } else CallAssistService.stop(this);
+      root.postDelayed(this::render, 600);
+    }));
+    calls.addView(toggle("Speak the answer into the call (speaker on)", JarvisPrefs.callMode(this) == CallCoach.Mode.SPEAK, on -> {
+      String mode = on ? "speak" : (JarvisPrefs.callMode(this) == CallCoach.Mode.OFF ? "off" : "suggest");
+      prefs.edit().putString(JarvisPrefs.CALL_ASSIST, mode).apply();
+      if (!mode.equals("off")) CallAssistService.start(this); else CallAssistService.stop(this);
+      root.postDelayed(this::render, 600);
+    }));
+    calls.addView(toggle("Answer incoming calls automatically", JarvisPrefs.callAutoAnswer(this), on -> {
+      prefs.edit().putBoolean(JarvisPrefs.CALL_AUTO_ANSWER, on).apply();
+      if (on) {
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, CALL_REQUEST);
+        else alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", CallAssistService::openAnswerPermission);
+      }
+      root.postDelayed(this::render, 600);
+    }));
+    calls.addView(toggle("Close the card when the call ends", JarvisPrefs.callHangupStops(this), on -> prefs.edit().putBoolean(JarvisPrefs.CALL_HANGUP_STOPS, on).apply()));
+    calls.addView(button((Settings.canDrawOverlays(this) ? "On: " : "Off: ") + "Show the call card (display over other apps)",
+      () -> open(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())))));
+    calls.addView(button((checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED ? "On: " : "Off: ") + "Microphone",
+      () -> requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC_REQUEST)));
+    calls.addView(button("Call assistant: " + CallAssistService.describeMode(this),
+      () -> CallAssistService.openAnswerPermission(this)));
+    calls.addView(button("Test: show the call card now", () -> { CallAssistService.start(this); Toast.makeText(this, "Card should appear at the top. Stop it from its notification.", Toast.LENGTH_LONG).show(); }));
 
     LinearLayout lock = card("Security lock", SecureGate.available(this) ? "Ask for fingerprint, face or screen lock before Jarvis places a call or sends a message." : "Set a screen lock on this phone (Android 9+) to use this.");
     lock.addView(toggle("Lock calls and messages", JarvisPrefs.secureActions(this), on -> prefs.edit().putBoolean(JarvisPrefs.SECURE_ACTIONS, on).apply()));
@@ -206,6 +240,18 @@ public final class ProSettingsActivity extends Activity {
     card.addView(text(body, 13, MUTED));
     root.addView(card); return card;
   }
+  private String callBody() {
+    return "During a call Jarvis shows a small card with the live transcript and one suggested answer per sentence; in speak mode it also says that answer out loud through the speaker. "
+      + "Honest limit: Android does not let a normal app listen to the call's own audio line. Jarvis hears the other person through the speaker and the microphone, like a speakerphone. "
+      + "On phones that block the microphone during a call it says so instead of guessing. Answered calls start on speaker, and it never reads out an OTP, PIN or password.";
+  }
+
+  private void alert(String title, String message, Runnable after) {
+    new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+      .setPositiveButton("Continue", (d, w) -> { if (after != null) after.run(); })
+      .setNegativeButton("Not now", null).show();
+  }
+
   interface Flag { void set(boolean on); }
   interface Value { void set(String value); }
   private View toggle(String label, boolean value, Flag flag) {
@@ -243,8 +289,21 @@ public final class ProSettingsActivity extends Activity {
       return;
     }
     if (request == MIC_REQUEST) {
-      if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) WakeWordService.start(this);
-      else { JarvisPrefs.get(this).edit().putBoolean(JarvisPrefs.WAKE_WORD, false).apply(); toast("The wake word needs microphone permission."); }
+      boolean mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+      if (mic && JarvisPrefs.wakeWord(this)) WakeWordService.start(this);
+      if (mic && JarvisPrefs.callMode(this) != CallCoach.Mode.OFF) CallAssistService.start(this);
+      if (!mic) {
+        JarvisPrefs.get(this).edit().putBoolean(JarvisPrefs.WAKE_WORD, false).apply();
+        toast("The wake word and the call assistant both need the microphone.");
+      }
+    }
+    if (request == CALL_REQUEST) {
+      if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+        alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", CallAssistService::openAnswerPermission);
+      } else {
+        JarvisPrefs.get(this).edit().putBoolean(JarvisPrefs.CALL_AUTO_ANSWER, false).apply();
+        toast("Without the Phone permission Jarvis cannot answer calls.");
+      }
     }
     render();
   }

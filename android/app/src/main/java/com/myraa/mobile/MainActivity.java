@@ -795,6 +795,34 @@ public class MainActivity extends Activity {
    * text in an English voice is imperfect, but silence is worse. The screen always shows the text
    * as well, and the UI is told which voice was used so the user can see why it sounds different.
    */
+  /**
+   * Speaks one short line on behalf of the call assistant, with no window involved.
+   *
+   * Android's text-to-speech needs a live engine object, and the call has no Activity, so the
+   * engine is created here for the single sentence and shut down afterwards. Failures are
+   * swallowed on purpose: losing a sentence must never break a phone call.
+   */
+  static void speakForCall(Context context, String text) {
+    final TextToSpeech[] holder = new TextToSpeech[1];
+    holder[0] = new TextToSpeech(context.getApplicationContext(), status -> {
+      TextToSpeech engine = holder[0];
+      if (engine == null) return;
+      if (status != TextToSpeech.SUCCESS) { try { engine.shutdown(); } catch (RuntimeException ignored) { /* never started */ } return; }
+      String tag = JarvisPrefs.get(context).getString("language", "bn-IN");
+      boolean ready = false;
+      for (Locale candidate : new Locale[]{ Locale.forLanguageTag(tag), Locale.forLanguageTag("bn-BD"),
+          Locale.forLanguageTag("bn-IN"), Locale.forLanguageTag("en-IN"), Locale.US }) {
+        if (candidate == null) continue;
+        int result = engine.setLanguage(candidate);
+        if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) { ready = true; break; }
+      }
+      if (!ready) { try { engine.shutdown(); } catch (RuntimeException ignored) { /* never started */ } return; }
+      Bundle params = new Bundle();
+      int spoken = engine.speak(SpeechEngine.speakable(text), TextToSpeech.QUEUE_FLUSH, params, "call-assist");
+      if (spoken == TextToSpeech.ERROR) { try { engine.shutdown(); } catch (RuntimeException ignored) { /* never started */ } }
+    });
+  }
+
   private void speakText(String text) {
     runOnUiThread(() -> {
       if (!foreground) return;
