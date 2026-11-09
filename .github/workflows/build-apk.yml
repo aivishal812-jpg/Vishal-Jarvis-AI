@@ -56,12 +56,17 @@ jobs:
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret. A temporary key is used, so uninstall the old app before installing this build."
           fi
 
+      - name: Bump versionCode for this build
+        run: node scripts/bump-version.mjs
+
       - name: Build APK
         run: bash scripts/build-android.sh
 
       - name: Read version
         id: version
-        run: echo "name=$(sed -n 's/.*android:versionName="\([0-9.]*\)".*/\1/p' android/app/src/main/AndroidManifest.xml | head -1)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "name=$(sed -n 's/.*android:versionName="\([0-9.]*\)".*/\1/p' android/app/src/main/AndroidManifest.xml | head -1)" >> "$GITHUB_OUTPUT"
+          echo "code=$(sed -n 's/.*android:versionCode="\([0-9]*\)".*/\1/p' android/app/src/main/AndroidManifest.xml | head -1)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -76,7 +81,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ steps.version.outputs.name }}-build${{ github.run_number }}"
-          gh release create "$TAG" artifacts/android/*.apk \
+          cd artifacts/android
+          for apk in *.apk; do mv "$apk" "Vishal-Jarvis-${{ steps.version.outputs.name }}-build${{ github.run_number }}.apk"; done
+          gh release create "$TAG" ./*.apk \
             --title "Vishal Jarvis ${{ steps.version.outputs.name }} (build ${{ github.run_number }})" \
-            --notes "Automatic APK build from commit ${GITHUB_SHA::7}. Download the .apk below and install it on your Android phone." \
+            --notes "Automatic APK build from commit ${GITHUB_SHA::7} (versionCode ${{ steps.version.outputs.code }}). Download the .apk below and install it on your Android phone." \
             --latest
