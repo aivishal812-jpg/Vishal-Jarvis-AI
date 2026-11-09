@@ -292,9 +292,16 @@ public final class VoiceCommandActivity extends Activity {
       if (tts != null && waitingToSpeak == null) { waitingToSpeak = text; ui.postDelayed(() -> { if (waitingToSpeak != null) { waitingToSpeak = null; afterSpeech(); } }, 4000); return; }
       ui.postDelayed(this::afterSpeech, 2500); return;
     }
-    tts.setLanguage(Locale.forLanguageTag(JarvisPrefs.get(this).getString("language", "bn-IN")));
-    // Full answer, any length: chunked, never truncated.
-    if (speech == null || !speech.speak(text)) ui.postDelayed(this::afterSpeech, 1500);
+    Locale wanted = Locale.forLanguageTag(JarvisPrefs.get(this).getString("language", "bn-IN"));
+    boolean ready = false;
+    for (Locale candidate : new Locale[]{ wanted, Locale.forLanguageTag("bn-BD"), Locale.forLanguageTag("en-IN"), Locale.US }) {
+      if (candidate == null) continue;
+      int result = tts.setLanguage(candidate);
+      if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) { ready = true; break; }
+    }
+    if (!ready) { /* keep the engine's default voice instead of going silent */ }
+    // Full answer, any length: chunked and markdown-free, never truncated.
+    if (speech == null || !speech.speak(SpeechEngine.speakable(text))) ui.postDelayed(this::afterSpeech, 1500);
   }
 
   private static String clean(String text) {

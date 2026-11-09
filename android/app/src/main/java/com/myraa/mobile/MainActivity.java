@@ -813,6 +813,7 @@ public class MainActivity extends Activity {
       }
       pendingSpeech = null;
       String tag = prefs.getString("language", "bn-IN");
+      String reply = SpeechEngine.speakable(text);
       Locale wanted = Locale.forLanguageTag(tag);
       Locale[] candidates = new Locale[]{ wanted, bengaliVoice, Locale.forLanguageTag("bn-BD"), Locale.forLanguageTag("bn-IN"),
         Locale.forLanguageTag("en-IN"), Locale.US };
@@ -831,7 +832,7 @@ public class MainActivity extends Activity {
           "message", "No installed voice matches this language, so Jarvis is speaking with the phone's default voice. For natural Bengali, install a Bengali voice in Android Settings → System → Languages → Text-to-speech output."));
       }
       // Whole reply, any length: SpeechEngine queues it in sentence-sized chunks.
-      if (!speech.speak(text)) error("tts", "The installed speech engine could not start. The reply is on screen.", null);
+      if (!speech.speak(reply)) error("tts", "The installed speech engine could not start. The reply is on screen.", null);
     });
   }
 

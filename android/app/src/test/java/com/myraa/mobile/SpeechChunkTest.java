@@ -39,6 +39,14 @@ public class SpeechChunkTest {
     assertTrue(chunks.get(0).endsWith("।"));
   }
 
+  @Test public void markdownIsNotReadOutLoud() {
+    String spoken = SpeechEngine.speakable("## রিপোর্ট\n- **দাম**: [লিংক](https://x.com) বেড়েছে\n```code```\nআজ **ভালো** আছি।");
+    assertFalse("markdown must not be spoken", spoken.contains("*") || spoken.contains("#") || spoken.contains("```") || spoken.contains("http"));
+    assertTrue(spoken.contains("দাম"));
+    assertTrue(spoken.contains("আজ ভালো আছি"));
+    assertEquals("", SpeechEngine.speakable(null));
+  }
+
   @Test public void shortReplyIsOneChunk() {
     List<String> chunks = SpeechEngine.split("হ্যাঁ, করে দিলাম।");
     assertEquals(1, chunks.size());

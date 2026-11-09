@@ -25,6 +25,24 @@ final class SpeechEngine {
     void onError(String message);
   }
 
+  /**
+   * Text with markdown, links, code fences and emoji removed, so the engine reads words instead of
+   * saying "asterisk asterisk" or spelling out URLs. The screen keeps the original formatting.
+   */
+  static String speakable(String text) {
+    if (text == null) return "";
+    String value = text;
+    value = value.replaceAll("```[\\s\\S]*?```", " ");
+    value = value.replaceAll("!\\[[^\\]]*\\]\\([^)]*\\)", " ");
+    value = value.replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1");
+    value = value.replaceAll("(https?://|www\\.)\\S+", "link");
+    value = value.replaceAll("(?m)^\\s{0,3}#{1,6}\\s*", "");
+    value = value.replaceAll("(?m)^\\s*[-*+]\\s+", "");
+    value = value.replaceAll("[*_`>|#]+", " ");
+    value = value.replaceAll("\\|", " ");
+    return value.replaceAll("\\s+", " ").trim();
+  }
+
   /** Chunk size, kept below every engine limit measured so far (the platform limit is ~4000). */
   static final int CHUNK_CHARS = 3600;
 
