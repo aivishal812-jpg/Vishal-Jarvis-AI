@@ -54,11 +54,17 @@ public final class AiTaskJobService extends JobService {
         public void event(JSONObject event) { AiTaskEvents.emit(event); }
         public JSONObject tool(String name, JSONObject args) {
           if (MobileTools.REMEMBER.equals(name)) {
-            boolean saved = MemoryStore.add(AiTaskJobService.this, args.optString("fact", ""));
-            return AiAgent.json("status", saved ? "saved" : "rejected", "message", saved ? "Saved to long-term memory." : "That fact was not saved; do not store secrets.");
+            return MemoryStore.save(AiTaskJobService.this, args.optString("fact", ""));
           }
-          // UI actions and confirmations cannot safely be launched from a background job.
-          return AiAgent.json("status", "permission_required", "message", "This action requires Vishal Jarvis to be open. Return to the app and ask again; nothing was done in the background.");
+          if (!MobileTools.ACTION.equals(name)) {
+            return AiAgent.json("status", "unsupported", "message", "That tool is not available in the background.");
+          }
+          // Reminders, notes, weather, device status, flashlight, volume, media keys,
+          // notifications and calendar reads work with no window and no dialog.
+          String action = args == null ? "" : args.optString("action", "");
+          if (BackgroundActions.supports(action)) return BackgroundActions.run(AiTaskJobService.this, action, args);
+          // Everything else needs a chooser, a permission prompt or a confirmation.
+          return AiAgent.json("status", "permission_required", "message", "This action needs the Vishal Jarvis window (it shows a chooser, a permission prompt or a confirmation). Nothing was done in the background; open the app and ask again.");
         }
       }).run(current);
       if (!control.stopped && store.complete(id, answer)) completed(current, answer);

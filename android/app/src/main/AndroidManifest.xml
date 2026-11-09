@@ -26,6 +26,7 @@
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
   <uses-permission android:name="android.permission.VIBRATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <uses-feature android:glEsVersion="0x00030000" android:required="true" />
   <queries>
@@ -70,7 +71,7 @@
     <provider android:name=".TranscriptProvider" android:authorities="com.myraa.mobile.transcripts" android:exported="false" android:grantUriPermissions="true" />
     <service android:name=".LiveVoiceService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" />
     <service
-      android:name=".MessageAutomationService"
+      android:name=".UiAutomationService"
       android:exported="true"
       android:label="@string/accessibility_service_label"
       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -86,6 +87,12 @@
     <service android:name=".JarvisTileService" android:exported="true" android:label="Hey Jarvis" android:icon="@drawable/vishal_jarvis_icon" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
       <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
     </service>
+    <receiver android:name=".ProactiveReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
     <receiver android:name=".ReminderReceiver" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />

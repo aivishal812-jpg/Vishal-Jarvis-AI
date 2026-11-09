@@ -15,7 +15,6 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -59,6 +58,7 @@ public final class VoiceCommandActivity extends Activity {
   private TextView heard, answer;
   private SpeechRecognizer recognizer;
   private TextToSpeech tts;
+  private SpeechEngine speech;
   private boolean ttsReady, resumed, closed, working;
   private String waitingToSpeak;
   private int followUps;
@@ -80,10 +80,11 @@ public final class VoiceCommandActivity extends Activity {
     tts = new TextToSpeech(this, status -> {
       ttsReady = status == TextToSpeech.SUCCESS;
       if (ttsReady) {
-        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-          @Override public void onStart(String id) { AiTaskEvents.speaking = true; }
-          @Override public void onDone(String id) { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
-          @Override public void onError(String id) { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
+        speech = new SpeechEngine(tts);
+        speech.setListener(new SpeechEngine.Listener() {
+          @Override public void onStart() { AiTaskEvents.speaking = true; }
+          @Override public void onDone() { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
+          @Override public void onError(String message) { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
         });
       }
       String pending = waitingToSpeak; waitingToSpeak = null;
@@ -234,10 +235,7 @@ public final class VoiceCommandActivity extends Activity {
   }
 
   private JSONObject runTool(String name, JSONObject args) {
-    if (MobileTools.REMEMBER.equals(name)) {
-      boolean saved = MemoryStore.add(this, args.optString("fact", ""));
-      return json("status", saved ? "saved" : "rejected", "message", saved ? "Saved to long-term memory." : "Not saved; never store secrets.");
-    }
+    if (MobileTools.REMEMBER.equals(name)) return MemoryStore.save(this, args.optString("fact", ""));
     if (!MobileTools.ACTION.equals(name)) return json("status", "unsupported", "message", "That tool is not available.");
     String action = args.optString("action");
     if (locked() && !SAFE_WHEN_LOCKED.contains(action) && !unlock()) {
@@ -295,8 +293,8 @@ public final class VoiceCommandActivity extends Activity {
       ui.postDelayed(this::afterSpeech, 2500); return;
     }
     tts.setLanguage(Locale.forLanguageTag(JarvisPrefs.get(this).getString("language", "bn-IN")));
-    String limited = text.substring(0, Math.min(text.length(), TextToSpeech.getMaxSpeechInputLength()));
-    if (limited.isEmpty() || tts.speak(limited, TextToSpeech.QUEUE_FLUSH, null, "jarvis-voice") == TextToSpeech.ERROR) ui.postDelayed(this::afterSpeech, 1500);
+    // Full answer, any length: chunked, never truncated.
+    if (speech == null || !speech.speak(text)) ui.postDelayed(this::afterSpeech, 1500);
   }
 
   private static String clean(String text) {
@@ -334,6 +332,7 @@ public final class VoiceCommandActivity extends Activity {
     active = false; closed = true; cancelled = true;
     releaseRecognizer();
     BeepMuter.unmuteLater(500);
+    if (speech != null) { try { speech.stop(); } catch (RuntimeException ignored) { } }
     if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (RuntimeException ignored) { } }
     AiTaskEvents.speaking = false;
     try { actions.close(); } catch (RuntimeException ignored) { }

@@ -9,5 +9,7 @@ public final class JarvisApp extends Application {
     CrashLog.install(this);
     try { BeepMuter.restore(this); } catch (RuntimeException ignored) { }
     try { ReminderScheduler.rescheduleAll(this); } catch (RuntimeException ignored) { }
+    try { ProactiveScheduler.reschedule(this); } catch (RuntimeException ignored) { }
+    try { MemoryDb.importLegacy(this); } catch (RuntimeException ignored) { }
   }
 }

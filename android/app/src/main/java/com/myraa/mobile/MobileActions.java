@@ -33,7 +33,7 @@ import java.util.*;
  *
  *  Direct actions (calls, SMS, third-party chat sends) are permission-gated, always
  *  preceded by the user's explicit instruction, and report only what actually happened.
- *  There is no accessibility access outside MessageAutomationService, no shell, no
+ *  There is no accessibility access outside UiAutomationService, no shell, no
  *  arbitrary URL intent and no silent background sending. */
 public final class MobileActions {
   public static final int CONTACTS_REQUEST=88;
@@ -270,6 +270,11 @@ public final class MobileActions {
           public void allowed(){gateOpen=true;try{execute(id,name,raw);}finally{gateOpen=false;}}
           public void denied(String message){finish(id,"auth_failed",message);}
         });
+        return;
+      }
+      if(ActionRegistry.backgroundSafe(action)&&!ProActions.backgroundSafe(action)){
+        JSONObject direct=ActionRegistry.run(activity,action,args);
+        finish(id,direct.optString("status","failed"),direct.optString("message",""),direct);
         return;
       }
       if(ProActions.supports(action)){pro().handle(id,action,args);return;}
@@ -586,7 +591,7 @@ public final class MobileActions {
 
   private void dispatchChat(String id,String app,String pkg,String label,String deepLink,String text){
     if(pkg==null||pkg.isEmpty()||!launcher.installed(pkg)){finish(id,"not_installed",appLabel(app)+" is not installed on this phone.");return;}
-    MessageAutomationService service=MessageAutomationService.get();
+    UiAutomationService service=UiAutomationService.get();
     if(service==null){
       finish(id,"permission_required","To send directly in "+appLabel(app)+" I need the “Vishal Jarvis message sender” accessibility service. Enable it in Android Settings → Accessibility (Android may ask you to allow restricted settings first), then say “send” again.",json("needsAccessibility",true));
       return;
@@ -656,7 +661,7 @@ public final class MobileActions {
   private void cancelSend(String id){
     boolean had=pendingSend!=null;
     pendingSend=null;
-    if(MessageAutomationService.get()!=null)MessageAutomationService.get().cancel("Sending cancelled.");
+    if(UiAutomationService.get()!=null)UiAutomationService.get().cancel("Sending cancelled.");
     finish(id,had?"cancelled":"nothing_pending",had?"Cancelled. Nothing was sent.":"There was nothing waiting to send.");
   }
   public void cancelPendingSend(){pendingSend=null;}
@@ -1089,7 +1094,7 @@ public final class MobileActions {
     if(proActions!=null)proActions.close();
     pending=null;pendingId=null;pendingPhonePermission=null;pendingTorchId=null;pendingTorchState=null;
     if(chooser!=null){chooser.dismiss();chooser=null;}
-    if(MessageAutomationService.get()!=null)MessageAutomationService.get().cancel("App closed. Nothing was sent.");
+    if(UiAutomationService.get()!=null)UiAutomationService.get().cancel("App closed. Nothing was sent.");
     if(smsReceiverRegistered){try{activity.unregisterReceiver(smsReceiver);}catch(RuntimeException ignored){}smsReceiverRegistered=false;}
   }
 }

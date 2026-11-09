@@ -46,6 +46,7 @@ public final class WakeWordService extends Service {
   private String shownText = "";
   /** Another app (for example the keyboard's voice typing) is recording; Jarvis stays out of its way. */
   private volatile boolean otherMic;
+  private boolean onDevice, onDeviceBanned;
   private long otherMicFreeSince, ownMicStoppedAt;
   private AudioManager audio;
   private AudioManager.AudioRecordingCallback recordingCallback;
@@ -75,7 +76,8 @@ public final class WakeWordService extends Service {
         wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VishalJarvis:wakeword");
         wakeLock.setReferenceCounted(false);
       }
-      if (!wakeLock.isHeld()) wakeLock.acquire();
+      // Held only while the loop is alive, with a timeout, so a stuck recognizer can never keep the CPU awake forever.
+      if (!wakeLock.isHeld()) wakeLock.acquire(120_000);
     } catch (RuntimeException ignored) { }
     if (!SpeechRecognizer.isRecognitionAvailable(this)) { lastStatus = "no speech recognizer on this phone (install Google app)"; stopSelf(); return START_NOT_STICKY; }
     BeepMuter.restore(this);
@@ -172,11 +174,15 @@ public final class WakeWordService extends Service {
   private void loop() {
     if (!running) return;
     if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { lastStatus = "needs microphone permission"; stopSelf(); return; }
-    if (paused()) { release(); BeepMuter.unmuteNow(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
+    if (paused()) {
+      release();
+      if (wakeLock != null && wakeLock.isHeld()) { try { wakeLock.release(); } catch (RuntimeException ignored) { } }
+      BeepMuter.unmuteNow(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
     if (listening) return;
+    if (wakeLock != null && !wakeLock.isHeld()) { try { wakeLock.acquire(120_000); } catch (RuntimeException ignored) { } }
     try {
       if (recognizer == null) {
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        recognizer = createRecognizer();
         recognizer.setRecognitionListener(listener);
       }
       Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -185,6 +191,9 @@ public final class WakeWordService extends Service {
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language())
         .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+        // Keep the wake word on the phone: no audio upload and far less radio use when the
+        // device has an offline speech model. If it does not, the phone falls back on its own.
+        .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         // Ask for long sessions so the mic restarts (and would beep) as rarely as possible.
         .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L)
         .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
@@ -193,8 +202,23 @@ public final class WakeWordService extends Service {
       listening = true;
       BeepMuter.mute(this); // silence the start "ding"
       recognizer.startListening(intent);
-      status("Listening · say \"Jarvis\"");
+      status("Listening · say \"Jarvis\"" + (onDevice ? " (offline)" : ""));
     } catch (RuntimeException e) { listening = false; release(); handler.postDelayed(this::loop, 5000); }
+  }
+
+  /**
+   * Uses the on-device recognizer when Android provides one (API 31+, model downloaded), which
+   * keeps the wake word offline and costs a fraction of the battery of the network recognizer.
+   */
+  private SpeechRecognizer createRecognizer() {
+    try {
+      if (Build.VERSION.SDK_INT >= 31 && !onDeviceBanned && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+        SpeechRecognizer local = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+        if (local != null) { onDevice = true; return local; }
+      }
+    } catch (RuntimeException ignored) { }
+    onDevice = false;
+    return SpeechRecognizer.createSpeechRecognizer(this);
   }
 
   private final RecognitionListener listener = new RecognitionListener() {
@@ -208,7 +232,12 @@ public final class WakeWordService extends Service {
       BeepMuter.unmuteLater(600);
       if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) { lastStatus = "needs microphone permission"; stopSelf(); return; }
       errorsInRow++;
-      if ((error == 12 || error == 13) && !"en-IN".equals(language)) { language = "en-IN"; release(); }
+      if ((error == 12 || error == 13) && onDevice && !onDeviceBanned) { onDeviceBanned = true; release(); }
+      else if ((error == 12 || error == 13) && !"en-IN".equals(language)) { language = "en-IN"; release(); }
+      if (error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
+        // No connection: re-evaluate the engine so the offline model is preferred next time.
+        onDevice = false; onDeviceBanned = false;
+      }
       if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT && errorsInRow >= 2) status("Problem: " + errorName(error));
       long delay = error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 2500 : error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ? 250 : Math.min(30000, 1000L * errorsInRow);
       if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) release();

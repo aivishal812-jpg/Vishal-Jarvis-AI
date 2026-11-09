@@ -42,6 +42,22 @@ final class ProActions {
 
   static boolean supports(String action) { for (String a : ACTIONS) if (a.equals(action)) return true; return false; }
 
+  /**
+   * The same actions, executed with no Activity through {@link ActionRegistry}, so reminders,
+   * notes, notifications, calendar reads, weather and the briefing work while the screen is
+   * locked or the app is in the background. Anything ProActions can only do with a window
+   * (ring_phone, settings pages, deleting calendar events) is left to the window path.
+   */
+  static boolean backgroundSafe(String action) {
+    if (action == null) return false;
+    for (String a : BACKGROUND_SAFE) if (a.equals(action)) return true;
+    return false;
+  }
+
+  private static final String[] BACKGROUND_SAFE = { "set_reminder", "list_reminders", "cancel_reminder",
+    "save_note", "list_notes", "delete_note", "read_notifications", "clear_notifications",
+    "read_calendar", "get_weather", "daily_briefing" };
+
   void handle(String id, String action, JSONObject args) throws Exception {
     switch (action) {
       case "set_reminder": setReminder(id, args); break;
@@ -60,6 +76,11 @@ final class ProActions {
         done.finish(id, n < 0 ? "failed" : "cleared", n < 0 ? "Android did not let me clear notifications right now." : "Cleared the notifications that could be dismissed.", null); break;
       }
       case "read_calendar": readCalendar(id, args); break;
+      case "what_did_i_say": case "missed_calls": case "otp_summary": case "screen_info": {
+        JSONObject direct = ActionRegistry.run(activity, action, args);
+        done.finish(id, direct.optString("status", "failed"), direct.optString("message", ""), direct);
+        break;
+      }
       case "delete_calendar_event": deleteCalendarEvent(id, args); break;
       case "get_weather": weather(id, args.optString("city")); break;
       case "daily_briefing": briefing(id, args.optString("city")); break;
@@ -222,6 +243,14 @@ final class ProActions {
     return new JSONObject().put("events", list).put("action", "delete_calendar_event");
   }
 
+  /** json() that never throws, for use inside listeners and background lambdas. */
+  private static JSONObject obj(Object... values) {
+    JSONObject value = new JSONObject();
+    try { for (int i = 0; i + 1 < values.length; i += 2) value.put(String.valueOf(values[i]), values[i + 1]); }
+    catch (Exception ignored) { }
+    return value;
+  }
+
   private static String summarise(List<CalendarReader.Target> targets, int limit) {
     StringBuilder text = new StringBuilder();
     for (int i = 0; i < targets.size() && i < limit; i++) {
@@ -264,7 +293,7 @@ final class ProActions {
         int removed = CalendarReader.deleteEvents(activity, ids);
         main.post(() -> {
           if (removed == 0) done.finish(id, "failed", "Android refused to delete " + (all ? "those events" : "that event") + ". It may belong to a read-only calendar (holidays, birthdays or a shared account), or you may be offline. Nothing was deleted.", null);
-          else done.finish(id, "deleted", all ? "Deleted " + removed + " upcoming event(s) from your calendar." : "Deleted the event from your calendar.", new JSONObject().put("deleted", removed));
+          else done.finish(id, "deleted", all ? "Deleted " + removed + " upcoming event(s) from your calendar." : "Deleted the event from your calendar.", obj("deleted", removed));
         });
       } catch (SecurityException denied) {
         main.post(() -> done.finish(id, "permission_required", "Calendar write access is missing, so nothing was deleted. Allow it in Android app settings and ask again.", null));

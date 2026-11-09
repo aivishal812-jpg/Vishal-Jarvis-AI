@@ -33,9 +33,15 @@ export type MobileAction =
  * The Live-voice schema comes from the generated mirror of MobileTools.java, so a new
  * action only has to be added in Java and regenerated with `node scripts/sync-tools.mjs`.
  */
-export const MOBILE_TOOL = GENERATED_TOOLS[0];
-export const REMEMBER_TOOL = GENERATED_TOOLS[1];
-export const LIVE_TOOLS = [MOBILE_TOOL, REMEMBER_TOOL];
+const byName = (name: string) => {
+  const found = GENERATED_TOOLS.find(tool => tool.name === name);
+  if (!found) throw new Error(`generatedTools.ts is missing ${name}; run npm run sync:tools`);
+  return found;
+};
+export const MOBILE_TOOL = byName('mobile_action');
+export const REMEMBER_TOOL = byName('remember_fact');
+export const OCR_TOOL = byName('read_image_text');
+export const LIVE_TOOLS = [MOBILE_TOOL, REMEMBER_TOOL, OCR_TOOL];
 
 /** Action names declared to the model, in declaration order. */
 export const ACTION_ENUM: string[] =

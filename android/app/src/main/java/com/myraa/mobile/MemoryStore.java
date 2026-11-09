@@ -8,7 +8,9 @@ import java.util.UUID;
 
 /** The same bounded, secret-refusing memory rule is used by UI and background jobs. */
 final class MemoryStore {
-  static boolean add(Context context, String raw) {
+  static boolean add(Context context, String raw) { return add(context, raw, "fact"); }
+
+  static boolean add(Context context, String raw, String kind) {
     String text = raw == null ? "" : raw.trim().replaceAll("\\s+", " ");
     if (text.length() < 3 || text.length() > 240) return false;
     if (text.matches("(?i).*(api[ _-]?key|password|passcode|otp|secret|card number|aadhaar|ssn|cvv).*")) return false;
@@ -22,7 +24,9 @@ final class MemoryStore {
         }
         while (memory.length() >= 30) memory.remove(0);
         memory.put(new JSONObject().put("id", UUID.randomUUID().toString()).put("text", text).put("at", System.currentTimeMillis()));
-        return prefs.edit().putString("memory", memory.toString()).commit();
+        boolean saved = prefs.edit().putString("memory", memory.toString()).commit();
+        if (saved) MemoryDb.recordFact(context, text, kind == null || kind.isEmpty() ? "fact" : kind);
+        return saved;
       } catch (Exception e) { return false; }
     }
   }
@@ -39,6 +43,16 @@ final class MemoryStore {
       } catch (Exception e) { return false; }
     }
   }
+  /** One call used by every tool path, so the honest result object is written once. */
+  static JSONObject save(Context context, String raw) { return save(context, raw, "fact"); }
+
+  static JSONObject save(Context context, String raw, String kind) {
+    boolean saved = add(context, raw, kind);
+    return AiAgent.json("status", saved ? "saved" : "rejected",
+      "message", saved ? "Saved to long-term memory. It will be available in future conversations."
+        : "That fact was not saved. Keep it short and never store passwords, OTPs, card numbers or API keys.");
+  }
+
   static void clear(Context context) {
     synchronized (AiTaskStore.LOCK) { context.getSharedPreferences("myraa.mobile.v1", Context.MODE_PRIVATE).edit().putString("memory", "[]").commit(); }
   }

@@ -26,6 +26,17 @@ final class AiTaskCoordinator {
       foregroundId = id; return true;
     }
   }
+  /** One claim/end pair for every caller (job, popup, lock-screen card, headless assistant). */
+  static boolean claim(AiTaskStore store, String id) {
+    synchronized (AiTaskStore.LOCK) {
+      if (foregroundId != null || jobId != null) return false;
+      if (!store.running(id)) return false;
+      foregroundId = id;
+      return true;
+    }
+  }
+  static void end(String id) { endForeground(id); endJob(id); }
+
   static void endForeground(String id) {
     synchronized (AiTaskStore.LOCK) { if (id != null && id.equals(foregroundId)) foregroundId = null; }
   }

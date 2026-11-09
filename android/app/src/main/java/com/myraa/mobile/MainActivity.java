@@ -19,7 +19,6 @@ import android.security.keystore.KeyProperties;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
 import android.util.Base64;
 import android.webkit.*;
 import android.widget.TextView;
@@ -52,8 +51,11 @@ public class MainActivity extends Activity {
   private static final int EXPORT_TRANSCRIPT_REQUEST = 93;
   private static final int PICK_IMAGE_REQUEST = 95;
   private static final int CAPTURE_IMAGE_REQUEST = 96;
+  private static final int PICK_DOCUMENT_REQUEST = 99;
   private static final int CAMERA_FOR_PHOTO_REQUEST = 97;
   private boolean pendingAutoVoice;
+  /** The last picture the user attached, kept so read_image_text can run on exactly that image. */
+  private Uri lastImageUri;
   private boolean shownOverLock;
   private boolean lastAccessibility = false;
   private static final int MAX_TOOL_ROUNDS = 4;
@@ -68,6 +70,8 @@ public class MainActivity extends Activity {
   private WebView web;
   private SharedPreferences prefs;
   private TextToSpeech tts;
+  private SpeechEngine speech;
+  private java.util.Locale bengaliVoice;
   private volatile boolean ttsReady;
   private volatile boolean foreground;
   private volatile HttpsURLConnection activeConnection;
@@ -103,11 +107,23 @@ public class MainActivity extends Activity {
     catch (Exception ignored) { personality = "You are Vishal Jarvis, created by Vishal. Default to natural West Bengal Indian Bengali. Be honest about your capabilities."; }
     tts = new TextToSpeech(this, status -> {
       ttsReady = status == TextToSpeech.SUCCESS;
-      if (ttsReady) tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-        @Override public void onStart(String id) { AiTaskEvents.speaking = true; emit(json("type", "speech", "active", true)); }
-        @Override public void onDone(String id) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
-        @Override public void onError(String id) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); error("tts", "The installed speech engine could not speak. Text remains available.", null); }
+      if (!ttsReady) return;
+      speech = new SpeechEngine(tts);
+      speech.setListener(new SpeechEngine.Listener() {
+        @Override public void onStart() { AiTaskEvents.speaking = true; emit(json("type", "speech", "active", true)); }
+        @Override public void onDone() { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
+        @Override public void onError(String message) { AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); error("tts", message, null); }
       });
+      // Pick the best Bengali voice: the default one on many devices is the English engine
+      // reading Bengali letters, which sounds wrong. Prefer a Bengali voice, else network.
+      try {
+        java.util.Set<java.util.Locale> locales = tts.getAvailableLanguages();
+        if (locales != null) {
+          for (java.util.Locale locale : locales) {
+            if (locale != null && "bn".equals(locale.getLanguage())) { bengaliVoice = locale; break; }
+          }
+        }
+      } catch (RuntimeException ignored) { }
     });
     mobileActions=new MobileActions(this,(id,result)->{
       ActionWaiter waiter=actionWaiters.remove(id);
@@ -161,11 +177,31 @@ public class MainActivity extends Activity {
       startActivityForResult(capture, CAPTURE_IMAGE_REQUEST);
     } catch (RuntimeException e) { emit(json("type", "image-attached", "ok", false, "message", "No camera app is available. Choose a photo from the gallery instead.")); }
   }
+  /** Extracts the text of a picked document off the UI thread and reports the honest result. */
+  private void stageDocument(Uri uri) {
+    settingsNetwork.execute(() -> {
+      try {
+        DocumentReader.Result document = DocumentReader.read(this, uri);
+        DocumentAttachment.stage(document);
+        emit(json("type", "document", "ok", true, "name", document.name,
+          "pages", document.pages, "chars", document.text.length(),
+          "message", document.text.length() > 6000
+            ? "Read " + (document.pages > 0 ? document.pages + " pages" : "the document") + ". Ask a question and I will use the part that matters."
+            : "Read the document. Ask me anything about it."));
+      } catch (DocumentReader.Unsupported unsupported) {
+        emit(json("type", "document", "ok", false, "message", unsupported.getMessage()));
+      } catch (Exception failure) {
+        emit(json("type", "document", "ok", false, "message", "That file could not be read. Encrypted or scanned PDFs without a text layer need OCR, which is not available offline here."));
+      }
+    });
+  }
+
   private void launchGallery() {
     try { startActivityForResult(Intent.createChooser(new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE), "Choose a photo for Jarvis"), PICK_IMAGE_REQUEST); }
     catch (RuntimeException e) { emit(json("type", "image-attached", "ok", false, "message", "No gallery or file app is available.")); }
   }
   private void stageImage(Uri uri) {
+    lastImageUri = uri;
     settingsNetwork.execute(() -> {
       try {
         String thumb = ImageAttachment.stage(MainActivity.this, uri);
@@ -286,7 +322,7 @@ public class MainActivity extends Activity {
       "overlay", Settings.canDrawOverlays(this),
       "phone", granted(Manifest.permission.CALL_PHONE),
       "sms", granted(Manifest.permission.SEND_SMS),
-      "accessibility", MessageAutomationService.available());
+      "accessibility", UiAutomationService.available());
     JSONObject value = json("model", prefs.getString("model", "gemini-3.5-flash"), "quality", prefs.getString("quality", "low"),
       "language", prefs.getString("language", "bn-IN"), "spokenReplies", prefs.getBoolean("spokenReplies", false),
       "keyConfigured", prefs.contains("keyCipher"), "keyVerified", prefs.getLong("keyVerifiedAt", 0) > 0 && prefs.getString("verifiedModel", "").equals(prefs.getString("model", "gemini-3.5-flash")),
@@ -458,6 +494,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void stopNativeCapture() { if (audioCapture != null) audioCapture.stop(); }
     @JavascriptInterface public String audioDiagnostics() { return audioCapture == null ? "{}" : audioCapture.diagnostics().toString(); }
     @JavascriptInterface public void speak(String text) { speakText(text); }
+    @JavascriptInterface public void stopSpeaking() { runOnUiThread(() -> stopSpeaking()); }
     @JavascriptInterface public void stopSpeech() { if (tts != null) tts.stop(); AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
     @JavascriptInterface public void clearKey() {
       cancel(); AiTaskCoordinator.cancelAll(MainActivity.this);
@@ -540,6 +577,16 @@ public class MainActivity extends Activity {
         }).setNegativeButton("Cancel", null).show());
     }
     @JavascriptInterface public void clearImage() { ImageAttachment.clear(); }
+    /** Reads a PDF or text document into the next request's context. */
+    @JavascriptInterface public void pickDocument() {
+      runOnUiThread(() -> {
+        try {
+          Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "text/*"});
+          startActivityForResult(intent, PICK_DOCUMENT_REQUEST);
+        } catch (RuntimeException missing) { emit(json("type", "document", "ok", false, "message", "No file app is available on this phone.")); }
+      });
+    }
     @JavascriptInterface public void openProSettings() { runOnUiThread(() -> startActivity(new Intent(MainActivity.this, ProSettingsActivity.class))); }
     @JavascriptInterface public String takeLaunchAction() {
       if (!pendingAutoVoice) return "";
@@ -560,7 +607,7 @@ public class MainActivity extends Activity {
           if (!granted(Manifest.permission.SEND_SMS)) needed.add(Manifest.permission.SEND_SMS);
         }
         else if ("accessibility".equals(name)) {
-          ComponentName sender = new ComponentName(MainActivity.this, MessageAutomationService.class);
+          ComponentName sender = new ComponentName(MainActivity.this, UiAutomationService.class);
           Intent direct = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
           try { direct.putExtra(":settings:fragment_args_key", sender.flattenToString());
             direct.putExtra(":settings:show_fragment_args", android.os.Bundle.EMPTY);
@@ -613,6 +660,7 @@ public class MainActivity extends Activity {
     if (!prefs.contains("keyCipher")) { error("text", "Add your Gemini API key in Settings.", id); return; }
     synchronized (chatLock) { if (busy) { error("text", "A reply is already running. Stop it or wait.", id); return; } busy = true; }
     ImageAttachment.claim(id);
+    DocumentAttachment.claim(id);
     AiTaskStore store = AiTaskStore.get(this);
     AiTaskStore.Task task;
     try {
@@ -696,14 +744,51 @@ public class MainActivity extends Activity {
 
   /** Executes one tool call for the model and always returns a truthful status object. */
   private JSONObject runTool(String name, JSONObject args) {
+    if (MobileTools.OCR.equals(name)) {
+      Uri uri = lastImageUri;
+      if (uri == null) {
+        return json("status", "invalid", "message", "Attach a picture with the photo button first, then ask again.");
+      }
+      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+      final JSONObject[] holder = new JSONObject[1];
+      network.execute(() -> {
+        try {
+          OcrTool.read(MainActivity.this, uri, args.optString("language", "bn"), result -> {
+            holder[0] = result;
+            latch.countDown();
+          });
+        } catch (RuntimeException failure) {
+          holder[0] = json("status", "failed", "message", "Text recognition could not start.");
+          latch.countDown();
+        }
+      });
+      try {
+        if (!latch.await(30, TimeUnit.SECONDS)) return json("status", "timeout", "message", "Text recognition took too long on that picture.");
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        return json("status", "cancelled", "message", "Text recognition was cancelled.");
+      }
+      return holder[0] == null ? json("status", "failed", "message", "Text recognition returned nothing.") : holder[0];
+    }
     if (MobileTools.REMEMBER.equals(name)) {
-      boolean saved = addFact(args.optString("fact", ""));
-      if (saved) emit(json("type", "memory", "status", "saved", "state", state()));
-      return json("status", saved ? "saved" : "rejected", "message", saved
-        ? "Saved to long-term memory. It will be available in future conversations."
-        : "That fact was not saved. Keep it short and never store passwords, OTPs, card numbers or API keys.");
+      String kind = args.optString("kind", "fact");
+      String label = args.optString("name", "");
+      String value = args.optString("value", "");
+      JSONObject saved = (!label.isEmpty() && !value.isEmpty())
+        ? MemoryDb.rememberEntity(this, kind.isEmpty() ? "fact" : kind, label, value)
+        : MemoryStore.save(this, args.optString("fact", ""), kind.isEmpty() ? "fact" : kind);
+      if ("saved".equals(saved.optString("status"))) emit(json("type", "memory", "status", "saved", "state", state()));
+      return saved;
     }
     if (!MobileTools.ACTION.equals(name)) return json("status", "unsupported", "message", "That tool is not available in the Vishal Jarvis Android app.");
+    // Device actions that need no Activity run straight away, in the foreground or not. Only the
+    // ones that open a chooser, a permission prompt or a confirmation use the window path.
+    String directAction = args.optString("action", "");
+    if (ActionRegistry.backgroundSafe(directAction) && !ProActions.backgroundSafe(directAction)) {
+      JSONObject direct = ActionRegistry.run(this, directAction, args);
+      emit(json("type", "tool-result", "name", name, "result", direct));
+      return direct;
+    }
     final String actionId = "tool-" + UUID.randomUUID();
     ActionWaiter waiter = new ActionWaiter();
     actionWaiters.put(actionId, waiter);
@@ -731,13 +816,24 @@ public class MainActivity extends Activity {
   private void speakText(String text) {
     runOnUiThread(() -> {
       if (!foreground) return;
-      if (!ttsReady || tts == null) { error("tts", "No ready Android text-to-speech engine is available. Text chat still works.", null); return; }
-      int language = tts.setLanguage(Locale.forLanguageTag(prefs.getString("language", "bn-IN")));
-      if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) { error("tts", "This speech engine does not have the selected language installed.", null); return; }
-      String limited = text.substring(0, Math.min(text.length(), TextToSpeech.getMaxSpeechInputLength()));
-      BeepMuter.unmuteNow();
-      if (tts.speak(limited, TextToSpeech.QUEUE_FLUSH, null, "myraa-reply") == TextToSpeech.ERROR) error("tts", "The installed speech engine could not start.", null);
+      if (!ttsReady || tts == null || speech == null) { error("tts", "No ready Android text-to-speech engine is available. Text chat still works.", null); return; }
+      String tag = prefs.getString("language", "bn-IN");
+      Locale wanted = Locale.forLanguageTag(tag);
+      int language = tts.setLanguage(wanted);
+      if ((language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED)
+          && "bn".equals(wanted.getLanguage()) && bengaliVoice != null) {
+        language = tts.setLanguage(bengaliVoice);
+      }
+      if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) { error("tts", "This speech engine does not have the selected language installed. The text is still on screen.", null); return; }
+      // Whole reply, any length: SpeechEngine queues it in sentence-sized chunks.
+      if (!speech.speak(text) && text != null && !text.trim().isEmpty()) error("tts", "The installed speech engine could not start.", null);
     });
+  }
+
+  private void stopSpeaking() {
+    if (speech != null) speech.stop();
+    AiTaskEvents.speaking = false;
+    emit(json("type", "speech", "active", false));
   }
 
   private void writeKey(SharedPreferences.Editor edit, String key) throws Exception { CredentialVault.write(edit, key); }
@@ -809,6 +905,10 @@ public class MainActivity extends Activity {
       else if (result == RESULT_OK && data != null && data.getData() != null) stageImage(data.getData());
       return;
     }
+    if (request == PICK_DOCUMENT_REQUEST) {
+      if (result == RESULT_OK && data != null && data.getData() != null) stageDocument(data.getData());
+      return;
+    }
     if (request != EXPORT_TRANSCRIPT_REQUEST || result != RESULT_OK || data == null || data.getData() == null) return;
     Uri destination = data.getData();
     settingsNetwork.execute(() -> {
@@ -856,7 +956,7 @@ public class MainActivity extends Activity {
     if(web!=null){web.onResume();emit(json("type", "state", "state", state()));web.evaluateJavascript("window.dispatchEvent(new CustomEvent('myraa:lifecycle',{detail:{active:true,backgroundLive:"+allowBackgroundLive+"}}))",null);}
     if(pendingAutoVoice&&web!=null)emit(json("type","auto-voice"));
     if(JarvisPrefs.wakeWord(this)&&!WakeWordService.running)WakeWordService.start(this);
-    if(web!=null&&MessageAutomationService.available()!=lastAccessibility){lastAccessibility=MessageAutomationService.available();emit(json("type","permissions","state",state()));}
+    if(web!=null&&UiAutomationService.available()!=lastAccessibility){lastAccessibility=UiAutomationService.available();emit(json("type","permissions","state",state()));}
   }
   @Override protected void onStop(){super.onStop();if(shownOverLock){shownOverLock=false;setShowWhenLocked(false);setTurnScreenOn(false);getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}if(!allowBackgroundLive&&pendingLiveId==null){cancelLive();if(web!=null)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('myraa:lifecycle',{detail:{active:false}}))",null);}}
   @Override protected void onDestroy() {
@@ -878,7 +978,7 @@ public class MainActivity extends Activity {
     }
     AiTaskEvents.visible = false; AiTaskEvents.detach(taskListener);
     network.shutdownNow();
-    if (isFinishing() && tts != null) { tts.stop(); tts.shutdown(); tts = null; ttsReady = false; }
+    if (isFinishing()) { if (speech != null) { speech.stop(); speech.shutdown(); speech = null; } if (tts != null) { tts.stop(); tts.shutdown(); tts = null; } ttsReady = false; }
     if (isFinishing() && web != null) { web.removeJavascriptInterface("MyraaNative"); web.destroy(); web = null; }
     super.onDestroy();
   }

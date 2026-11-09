@@ -15,7 +15,7 @@ export type ToolDeclaration = {
 export const GENERATED_TOOLS: ToolDeclaration[] = [
   {
     "name": "mobile_action",
-    "description": "Work the user's Android phone through supported actions: open installed apps, open an https page, play a song, album, artist, video or channel directly in a music app (YouTube, YouTube Music, Spotify, Prime Music, Gaana or JioSaavn), search YouTube or the web, place a phone call directly (choosing the SIM when the phone has several), send a message directly in WhatsApp, Telegram, Instagram, Messenger or SMS, reveal the phone's SIMs, toggle the flashlight, open Wi-Fi and system panels, set alarms and timers, open a calendar event editor, open Maps navigation, share text, copy to the clipboard, send media keys, change media volume, read device status, list installed apps, open the camera, set/list/cancel reminders that pop up even when the app is closed, save/list/delete quick notes, read the user's recent notifications (and clear them), read upcoming calendar events, delete one upcoming calendar event or all of them after the user confirms in the app dialog, get the weather for a city, give a daily briefing, ring the phone loudly to find it, and open Jarvis Pro settings. Contacts are resolved locally on the device. Sending is always two steps: prepare, then confirm with confirm=true. Never invent success: report the returned status truthfully.",
+    "description": "Work the user's Android phone through supported actions: open installed apps, open an https page, play a song, album, artist, video or channel directly in a music app (YouTube, YouTube Music, Spotify, Prime Music, Gaana or JioSaavn), search YouTube or the web, place a phone call directly (choosing the SIM when the phone has several), send a message directly in WhatsApp, Telegram, Instagram, Messenger or SMS, reveal the phone's SIMs, toggle the flashlight, open Wi-Fi and system panels, set alarms and timers, open a calendar event editor, open Maps navigation, share text, copy to the clipboard, send media keys, change media volume, read device status, list installed apps, open the camera, set/list/cancel reminders that pop up even when the app is closed, save/list/delete quick notes, read the user's recent notifications (and clear them), read upcoming calendar events, delete one upcoming calendar event or all of them after the user confirms in the app dialog, work with no window at all for safe actions (reminders, notes, weather, device status, flashlight, volume, media keys, notifications, calendar), read the text of the current screen through the accessibility tree, read the message the user is looking at, fill a form with values the user gave (never submitting it), summarise important notifications, missed calls and one-time codes with the code itself hidden, and search earlier conversations, get the weather for a city, give a daily briefing, ring the phone loudly to find it, and open Jarvis Pro settings. Contacts are resolved locally on the device. Sending is always two steps: prepare, then confirm with confirm=true. Never invent success: report the returned status truthfully.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -58,7 +58,14 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
             "get_weather",
             "daily_briefing",
             "ring_phone",
-            "open_jarvis_settings"
+            "open_jarvis_settings",
+            "read_screen",
+            "read_last_message",
+            "fill_form",
+            "screen_info",
+            "missed_calls",
+            "otp_summary",
+            "what_did_i_say"
           ],
           "description": "Which Android action to perform."
         },
@@ -69,10 +76,6 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
         "url": {
           "type": "STRING",
           "description": "A complete https:// page address explicitly given or implied by the user. Only for open_url."
-        },
-        "query": {
-          "type": "STRING",
-          "description": "The exact text the user said: the song, album, artist, video or channel for play_media, or the search text for search_youtube and search_web. Required for those actions."
         },
         "recipient": {
           "type": "STRING",
@@ -211,6 +214,25 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
           "type": "INTEGER",
           "description": "Target media volume as a percentage, 0-100. Only for set_volume."
         },
+        "maxChars": {
+          "type": "INTEGER",
+          "description": "For read_screen: how much screen text to return, 500-20000. Default 6000."
+        },
+        "values": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING"
+          },
+          "description": "For fill_form: the exact values to type, in the order the empty fields appear on the screen. Only values the user gave in this request; never guess or invent a password, OTP or card number."
+        },
+        "importantOnly": {
+          "type": "BOOLEAN",
+          "description": "For read_notifications: true returns only notifications that look important (high priority, missed calls, messages, alarms)."
+        },
+        "query": {
+          "type": "STRING",
+          "description": "For what_did_i_say: words to look for in earlier conversations and saved facts. For play_media: the song, album, artist, video or channel. For search_youtube and search_web: the search text."
+        },
         "direction": {
           "type": "STRING",
           "enum": [
@@ -226,6 +248,25 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
     }
   },
   {
+    "name": "read_image_text",
+    "description": "Read the text in a picture the user showed you (a screenshot, a photo of a sign, a bill, a form or a prescription). Use this instead of guessing when the user says 'this screenshot', 'ei chhobite ki ache' or asks about text you cannot see. The picture is the one the user attached with the photo button. Returns the recognised text on this phone; never invent text that is not returned.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "language": {
+          "type": "STRING",
+          "enum": [
+            "bn",
+            "en",
+            "hi"
+          ],
+          "description": "Script of the text, so the recogniser does not have to guess. Use bn for Bengali, hi for Hindi, en for English. Default bn."
+        }
+      },
+      "required": []
+    }
+  },
+  {
     "name": "remember_fact",
     "description": "Save one durable fact or preference about the user so future conversations can use it, for example their name, city, favourite language, or a standing routine. Only call this when the user asks you to remember something or states a lasting preference. Never store API keys, passwords, OTPs, card numbers or other secrets. Keep the fact under 240 characters, in the user's own words.",
     "parameters": {
@@ -234,6 +275,26 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
         "fact": {
           "type": "STRING",
           "description": "Short, self-contained fact to remember. One sentence."
+        },
+        "kind": {
+          "type": "STRING",
+          "enum": [
+            "fact",
+            "contact",
+            "place",
+            "routine",
+            "shop",
+            "other"
+          ],
+          "description": "What kind of thing this is. Use contact for a person with a saved number, place for an address or area, routine for a repeating habit. Default fact."
+        },
+        "name": {
+          "type": "STRING",
+          "description": "For a structured entry: the short name to look it up by later, for example \"shop\" or \"dentist\". Omit for a plain fact."
+        },
+        "value": {
+          "type": "STRING",
+          "description": "For a structured entry: the number or detail to store with name, for example +919876543210."
         }
       },
       "required": [

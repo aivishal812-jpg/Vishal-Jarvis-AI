@@ -135,6 +135,9 @@ final class AiTaskStore extends SQLiteOpenHelper {
         next.put(new JSONObject().put("role", "user").put("text", task.prompt).put("at", now).put("taskId", id));
         next.put(new JSONObject().put("role", "model").put("text", reply).put("at", now).put("taskId", id));
         if (!prefs.edit().putString("history", next.toString()).commit()) throw new java.io.IOException("Could not save the reply on this device.");
+        // Structured copy: conversation, both turns and search index (best effort, never fatal).
+        MemoryDb.recordTurn(app, id, task.prompt, "user", task.prompt);
+        MemoryDb.recordTurn(app, id, task.prompt, "model", reply);
       }
       ContentValues v = new ContentValues(); v.put("status", "completed"); v.put("result", reply); v.put("error", ""); v.put("updated_at", System.currentTimeMillis());
       getWritableDatabase().update("tasks", v, "request_id=? AND status IN ('queued','running')", new String[]{id});
