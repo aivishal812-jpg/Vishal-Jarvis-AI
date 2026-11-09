@@ -33,4 +33,13 @@ assert.match(actions, /closestApps/, 'an unknown app must still offer suggestion
 assert.match(actions, /ACTION_IMAGE_CAPTURE/, 'the camera action must keep its fallback');
 assert.match(ui, /runMobileWithFollowUp/, '"open X and play Y" must keep the two-step path');
 assert.ok(!ui.includes('if (!text || busy) return;'), 'phone commands must not be blocked by the busy lock');
-console.log('Background scheduling, SIM prompt, existing UI and export contracts passed.');
+// Calendar deletion must stay confirm-first, permission-complete and honest.
+const pro = read('android/app/src/main/java/com/myraa/mobile/ProActions.java');
+const calendar = read('android/app/src/main/java/com/myraa/mobile/CalendarReader.java');
+assert.ok(manifest.includes('android.permission.WRITE_CALENDAR'), 'calendar write permission must be declared');
+assert.match(pro, /delete_calendar_event/, 'the delete action must be exposed to the model');
+assert.match(calendar, /static int deleteEvents/, 'the delete implementation must exist');
+assert.match(pro, /setPositiveButton\("Delete"/, 'only the user tap may delete an event');
+assert.match(pro, /Nothing was deleted/, 'a refused delete must be reported honestly');
+assert.match(pro, /CALENDAR_WRITE_REQUEST/, 'the missing write grant must have its own permission result path');
+console.log('Background scheduling, SIM prompt, calendar delete and existing UI/export contracts passed.');

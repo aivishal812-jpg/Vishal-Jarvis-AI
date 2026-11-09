@@ -1069,6 +1069,8 @@ public final class MobileActions {
     if(permission!=null && granted(permission))retry.run();
     else finish(id,"permission_required","The requested Phone or SMS permission was not granted. Nothing was sent or called.");
   }
+  /** The calendar delete path keeps its own pending request inside ProActions. */
+  public void calendarPermissionResult(){if(proActions!=null)proActions.calendarPermissionResult();}
   public void torchPermissionResult(){
     String id=pendingTorchId;Boolean enabled=pendingTorchState;pendingTorchId=null;pendingTorchState=null;
     if(id==null||enabled==null)return;

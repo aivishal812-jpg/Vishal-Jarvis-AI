@@ -118,6 +118,8 @@ assert.equal(LIVE_TOOLS.length, 2);
 assert.equal(REMEMBER_TOOL.parameters.required?.[0], 'fact');
 assert.match(describeAction('set_alarm', { hour: 7, minute: 5 }), /07:05/);
 assert.equal(describeAction('unknown_action', {}), 'Working on your phone');
+assert.match(describeAction('delete_calendar_event', { title: 'Dentist' }), /Dentist/);
+assert.match(describeAction('delete_calendar_event', { all: true }), /every upcoming event/);
 
 console.log(`${cases.length + 4} parser cases checked, ${declared.length} actions declared, ${failed} failure(s)`);
 process.exit(failed === 0 ? 0 : 1);

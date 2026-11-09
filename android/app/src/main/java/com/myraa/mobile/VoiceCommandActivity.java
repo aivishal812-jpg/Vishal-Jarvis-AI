@@ -327,6 +327,7 @@ public final class VoiceCommandActivity extends Activity {
     if (request == MobileActions.CONTACTS_REQUEST) actions.permissionResult();
     else if (request == MobileActions.PHONE_REQUEST) actions.phonePermissionResult();
     else if (request == MobileActions.TORCH_REQUEST) actions.torchPermissionResult();
+    else if (request == ProActions.CALENDAR_WRITE_REQUEST || request == ProActions.CALENDAR_REQUEST) actions.calendarPermissionResult();
   }
 
   @Override protected void onDestroy() {

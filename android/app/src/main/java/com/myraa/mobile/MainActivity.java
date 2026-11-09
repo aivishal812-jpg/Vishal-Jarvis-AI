@@ -823,7 +823,13 @@ public class MainActivity extends Activity {
   @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(request, permissions, results);
     if (request == TASK_NOTIFICATION_REQUEST) { emit(json("type", "permissions", "state", state())); return; }
-    if (request == PERMISSION_REQUEST || request == ProActions.CALENDAR_REQUEST) { emit(json("type", "permissions", "state", state())); return; }
+    if (request == ProActions.CALENDAR_REQUEST || request == ProActions.CALENDAR_WRITE_REQUEST) {
+      emit(json("type", "permissions", "state", state()));
+      // Without this the delete request waits forever after the user allows write access.
+      if (request == ProActions.CALENDAR_WRITE_REQUEST) getWindow().getDecorView().post(() -> mobileActions.calendarPermissionResult());
+      return;
+    }
+    if (request == PERMISSION_REQUEST) { emit(json("type", "permissions", "state", state())); return; }
     if (request == CAMERA_FOR_PHOTO_REQUEST) {
       if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera();
       else emit(json("type", "image-attached", "ok", false, "message", "Camera permission was denied. You can still choose a photo from the gallery."));
