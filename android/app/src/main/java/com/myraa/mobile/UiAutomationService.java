@@ -477,7 +477,9 @@ public final class UiAutomationService extends AccessibilityService {
   }
 
   private static String appName(String pkg) {
-    try { android.content.pm.PackageManager pm = getPackageManager(); return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString(); }
+    UiAutomationService service = instance;
+    if (service == null) return pkg == null ? "" : pkg;
+    try { android.content.pm.PackageManager pm = service.getPackageManager(); return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString(); }
     catch (Exception ignored) { return pkg; }
   }
 
