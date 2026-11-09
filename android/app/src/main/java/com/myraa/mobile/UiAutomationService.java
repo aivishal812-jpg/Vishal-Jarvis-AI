@@ -3,6 +3,7 @@ package com.myraa.mobile;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.AccessibilityService.ScreenshotResult;
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback;
 import android.os.Build;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -336,26 +337,38 @@ public final class UiAutomationService extends AccessibilityService {
   @android.annotation.TargetApi(30)
   public android.graphics.Bitmap screenshot() {
     if (Build.VERSION.SDK_INT < 30) return null;
+    final java.util.concurrent.atomic.AtomicReference<android.graphics.Bitmap> result =
+      new java.util.concurrent.atomic.AtomicReference<>();
+    final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
     try {
-      ScreenshotResult captured = java.util.concurrent.CompletableFuture
-        .supplyAsync(() -> takeScreenshot(), command -> handler.post(command))
-        .get(9, java.util.concurrent.TimeUnit.SECONDS);
-      if (captured == null || captured.getHardwareBuffer() == null) return null;
-      try (android.hardware.HardwareBuffer buffer = captured.getHardwareBuffer()) {
-        android.graphics.Bitmap hardware = android.graphics.Bitmap.wrapHardwareBuffer(buffer, captured.getColorSpace());
-        if (hardware == null) return null;
-        int width = Math.min(hardware.getWidth(), 1440);
-        float scale = width / (float) hardware.getWidth();
-        int height = Math.max(1, Math.round(hardware.getHeight() * scale));
-        android.graphics.Bitmap software = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
-        android.graphics.Canvas canvas = new android.graphics.Canvas(software);
-        canvas.drawBitmap(hardware, null, new android.graphics.Rect(0, 0, width, height), null);
-        hardware.recycle();
-        return software;
-      }
+      takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+        @Override public void onSuccess(ScreenshotResult captured) {
+          try {
+            android.hardware.HardwareBuffer buffer = captured.getHardwareBuffer();
+            if (buffer == null) { latch.countDown(); return; }
+            android.graphics.Bitmap hardware = android.graphics.Bitmap.wrapHardwareBuffer(buffer, captured.getColorSpace());
+            if (hardware == null) { buffer.close(); latch.countDown(); return; }
+            int width = Math.min(hardware.getWidth(), 1080);
+            float scale = width / (float) hardware.getWidth();
+            int height = Math.max(1, Math.round(hardware.getHeight() * scale));
+            android.graphics.Bitmap software = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(software);
+            canvas.drawBitmap(hardware, null, new android.graphics.Rect(0, 0, width, height), null);
+            hardware.recycle();
+            buffer.close();
+            result.set(software);
+          } catch (Throwable ignored) {
+          } finally {
+            latch.countDown();
+          }
+        }
+        @Override public void onFailure(int errorCode) { latch.countDown(); }
+      });
+      latch.await(9, java.util.concurrent.TimeUnit.SECONDS);
     } catch (Throwable refused) {
       return null;
     }
+    return result.get();
   }
 
   /** Screen bounds, so a screenshot or OCR result can be lined up with the tree. */
