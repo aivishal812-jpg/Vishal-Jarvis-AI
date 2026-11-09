@@ -571,8 +571,11 @@ window.MyraaEvents = event => {
   }
   if (event.type === 'tool-result') {
     const result = event.result || {};
-    const good = ['opened', 'play_started', 'search_opened', 'settings_opened', 'torch_changed', 'alarm_opened', 'timer_opened', 'event_opened', 'navigated', 'shared', 'copied', 'media_sent', 'volume_changed', 'info', 'apps', 'saved', 'call_started', 'sent', 'sent_unverified', 'sms_queued', 'sms_delivered_to_network', 'reminder_set', 'reminders', 'cancelled', 'notes', 'deleted', 'notifications', 'cleared', 'calendar', 'weather', 'briefing', 'ringing', 'stopped'].includes(result.status);
+    const good = ['opened', 'play_started', 'search_opened', 'settings_opened', 'torch_changed', 'alarm_opened', 'timer_opened', 'event_opened', 'navigated', 'shared', 'copied', 'media_sent', 'volume_changed', 'info', 'apps', 'saved', 'call_started', 'dialer_opened', 'sent', 'sent_unverified', 'sms_queued', 'sms_delivered_to_network', 'reminder_set', 'reminders', 'cancelled', 'notes', 'deleted', 'notifications', 'cleared', 'calendar', 'weather', 'briefing', 'ringing', 'stopped'].includes(result.status);
     if (result.data?.suggestions) activity(`${result.message} ${result.data.suggestions}`, 'warn', false);
+    // A blocked action must say where the switch is, in one line, instead of a dead end.
+    if (result.data?.needsAccessibility) notice("Turn on Settings → Accessibility → \"Vishal Jarvis screen reader & message sender\" to send messages directly. Nothing was sent.");
+    if (result.status === 'needs_confirmation') notice('Say “send” to confirm, or “cancel” to drop it.');
     activity(result.message || (good ? 'Done.' : 'Not completed.'), good ? 'done' : 'warn', false);
     return;
   }

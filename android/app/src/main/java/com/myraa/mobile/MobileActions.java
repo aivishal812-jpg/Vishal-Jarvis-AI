@@ -343,12 +343,23 @@ public final class MobileActions {
       }
       handle=accounts.get(Math.min(choice,accounts.size())-1);
     }else if(accounts.size()==1){
-      handle=accounts.get(0);
+      // Only pin the account when the user asked for a SIM. Pinning the only visible account
+      // makes some phones refuse the call outright (the account may not be call-capable).
+      if(choice>0)handle=accounts.get(0);
     }
     try{
       Intent intent=new Intent(Intent.ACTION_CALL,Uri.fromParts("tel","+"+digits,null));
       if(handle!=null)intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE,handle);
       boolean placed=launcher.open(intent);
+      if(!placed){
+        // Some phones refuse ACTION_CALL from the background or with an unknown account, but the
+        // dialer still opens pre-filled. The call is then one tap away and nothing is pretended.
+        placed=launcher.open(new Intent(Intent.ACTION_DIAL,Uri.fromParts("tel","+"+digits,null)));
+        if(placed){
+          finish(id,"dialer_opened","Android would not place the call itself, so the dialer is open with "+label+" ready. Tap the green call button to finish.");
+          return;
+        }
+      }
       if(placed){
         String simNote=accounts.size()>1&&choice>0?" on SIM "+choice:"";
         finish(id,"call_started","Calling "+label+simNote+". The call is being placed now.");
@@ -541,23 +552,44 @@ public final class MobileActions {
       .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");}).show();
   }
 
+  private static final String KEY_PENDING_SEND = "pendingSend";
+
+  /** Reloads a prepared message that was saved before the process died. */
+  private void restorePending() {
+    try {
+      String raw = JarvisPrefs.get(activity).getString(KEY_PENDING_SEND, "");
+      if (raw == null || raw.isEmpty()) return;
+      JSONObject stored = new JSONObject(raw);
+      if (System.currentTimeMillis() - stored.optLong("at", 0) > PENDING_TTL) { clearPending(); return; }
+      pendingSend = stored;
+    } catch (Exception ignored) { /* tolerated: a corrupt saved draft is simply dropped */ }
+  }
+
+  private void clearPending() {
+    pendingSend = null;
+    JarvisPrefs.get(activity).edit().remove(KEY_PENDING_SEND).apply();
+  }
+
   private void storePending(String id,String app,String label,String key,String digits,String text,String sim){
     pendingSend=json("app",app,"label",label,"key",key,"digits",digits==null?"":digits,"text",text,"sim",sim==null?"":sim,"at",System.currentTimeMillis());
+    // Survives the process being killed between "prepare" and "send".
+    JarvisPrefs.get(activity).edit().putString(KEY_PENDING_SEND,pendingSend.toString()).apply();
     String preview=text.length()>120?text.substring(0,120)+"…":text;
     finish(id,"needs_confirmation","Ready to send to "+label+" on "+appLabel(app)+": “"+preview+"”. Say “send” to confirm, or “cancel”.",
       json("pending",json("app",app,"label",label,"text",text)));
   }
 
   private void confirmSend(String id){
+    if(pendingSend==null) restorePending();
     JSONObject pendingMessage=pendingSend;
     if(pendingMessage==null){finish(id,"nothing_pending","There is no prepared message. Tell me whom to message and what to say first.");return;}
     if(System.currentTimeMillis()-pendingMessage.optLong("at",0)>PENDING_TTL){
-      pendingSend=null;finish(id,"expired","That prepared message expired. Tell me the message again.");return;
+      clearPending();finish(id,"expired","That prepared message expired. Tell me the message again.");return;
     }
     String app=pendingMessage.optString("app"),label=pendingMessage.optString("label");
     String text=pendingMessage.optString("text"),sim=pendingMessage.optString("sim");
     String digits=pendingMessage.optString("digits"),key=pendingMessage.optString("key");
-    if(app.equals("sms")){pendingSend=null;sendSms(id,digits,label,text,sim);return;}
+    if(app.equals("sms")){clearPending();sendSms(id,digits,label,text,sim);return;}
     if(app.equals("whatsapp")){
       String pkg=whatsapp();
       if(pkg==null){finish(id,"not_installed","WhatsApp is not installed on this phone.");return;}
@@ -597,12 +629,13 @@ public final class MobileActions {
       return;
     }
     final String appName=appLabel(app);
-    service.send(pkg,deepLink,label,text,(status,message)->{
+    String phone = pendingSend==null?"":pendingSend.optString("digits","");
+    service.send(pkg,deepLink,label,text,phone,messagesTitle(label),(status,message)->{
       if("sent".equals(status)){
-        pendingSend=null;
+        clearPending();
         finish(id,"sent","Sent to "+label+" on "+appName+".");
       }else if("sent_unverified".equals(status)){
-        pendingSend=null;
+        clearPending();
         finish(id,"sent_unverified",message);
       }else if("cancelled".equals(status)||"timeout".equals(status)||"busy".equals(status)){
         finish(id,status,message);
@@ -611,6 +644,9 @@ public final class MobileActions {
       }
     });
   }
+
+  /** The name the chat title normally shows; WhatsApp may show the number, which is also accepted. */
+  private static String messagesTitle(String label){ return label==null?"":label.trim(); }
 
   private void sendSms(String id,String digits,String label,String text,String sim){
     if(!granted(Manifest.permission.SEND_SMS)){requestSmsPermission(id,()->sendSms(id,digits,label,text,sim));return;}
@@ -659,12 +695,13 @@ public final class MobileActions {
   }
 
   private void cancelSend(String id){
+    if(pendingSend==null)restorePending();
     boolean had=pendingSend!=null;
-    pendingSend=null;
+    clearPending();
     if(UiAutomationService.get()!=null)UiAutomationService.get().cancel("Sending cancelled.");
     finish(id,had?"cancelled":"nothing_pending",had?"Cancelled. Nothing was sent.":"There was nothing waiting to send.");
   }
-  public void cancelPendingSend(){pendingSend=null;}
+  public void cancelPendingSend(){clearPending();}
 
   // ---------------------------------------------------------------- other actions
 

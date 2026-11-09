@@ -88,6 +88,9 @@ public final class ProSettingsActivity extends Activity {
 
     LinearLayout perms = card("Permissions", "Turn these on for the new features to work fully.");
     perms.addView(button((JarvisNotificationListener.enabled(this) ? "On: " : "Off: ") + "Notification reading", () -> open(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))));
+    boolean reader = UiAutomationService.available();
+    perms.addView(button((reader ? "On: " : "Off: ") + "Screen reading & direct message sending",
+      () -> open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
     boolean cal = checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED;
     perms.addView(button((cal ? "On: " : "Off: ") + "Calendar reading", () -> { if (!cal) requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, CAL_REQUEST); else open(appDetails()); }));
     if (Build.VERSION.SDK_INT >= 31) perms.addView(button((ReminderScheduler.exactAllowed(this) ? "On: " : "Off: ") + "Exact reminder time", () -> open(new Intent("android.settings.REQUEST_SCHEDULE_EXACT_ALARM", Uri.parse("package:" + getPackageName())))));

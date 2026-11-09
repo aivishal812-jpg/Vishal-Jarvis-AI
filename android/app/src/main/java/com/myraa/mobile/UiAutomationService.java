@@ -62,13 +62,14 @@ public final class UiAutomationService extends AccessibilityService {
   private boolean tickScheduled;
 
   private static final class Job {
-    final String packageName, label, text;
+    final String packageName, label, text, phone, title;
     final Result callback;
     final long startedAt = System.currentTimeMillis();
-    boolean textSet, sendClicked;
-    long clickedAt;
-    Job(String packageName, String label, String text, Result callback) {
+    boolean textSet, sendClicked, verifiedTarget, triedSearch;
+    long clickedAt, waitedForTarget;
+    Job(String packageName, String label, String text, Result callback, String phone, String title) {
       this.packageName = packageName; this.label = label; this.text = text; this.callback = callback;
+      this.phone = phone; this.title = title;
     }
   }
 
@@ -111,6 +112,16 @@ public final class UiAutomationService extends AccessibilityService {
 
   /** Opens the app's own chat screen for this recipient and sends the prepared text. */
   public void send(String packageName, String deepLink, String label, String text, Result callback) {
+    send(packageName, deepLink, label, text, "", "", callback);
+  }
+
+  /**
+   * @param label the saved contact name, if any (used to pick the chat, and to try searching for
+   *              it when a phone number is not available)
+   * @param phone international digits without "+", used to make sure the chat really belongs to
+   *              that number before anything is typed
+   */
+  public void send(String packageName, String deepLink, String label, String text, String phone, String title, Result callback) {
     if (job != null) { callback.complete("busy", "Another message is still being sent. Wait a moment."); return; }
     if (deepLink == null || packageName == null) { callback.complete("unsupported", "This app has no direct chat link."); return; }
     try {
@@ -121,7 +132,7 @@ public final class UiAutomationService extends AccessibilityService {
       callback.complete("unavailable", "Android could not open the chat screen in that app.");
       return;
     }
-    job = new Job(packageName, label, text, callback);
+    job = new Job(packageName, label, text, callback, phone == null ? "" : phone.replaceAll("[^0-9]", ""), title == null ? "" : title);
     scheduleTick();
     handler.postDelayed(this::deadline, DEADLINE_MS);
   }
@@ -140,7 +151,14 @@ public final class UiAutomationService extends AccessibilityService {
     Job current = job;
     if (current == null) return;
     if (current.sendClicked && System.currentTimeMillis() - current.clickedAt > VERIFY_MS) {
-      finish("sent_unverified", "The send button was pressed, but the app did not confirm it. Check the chat before assuming it went out.");
+      // Our own message is now the last bubble in the chat. Prefer a real confirmation (the
+      // message text is visibly in the conversation) over a blunt "unverified".
+      AccessibilityNodeInfo after = getRootInActiveWindow();
+      boolean visible = after != null && after.getPackageName() != null
+        && current.packageName.equals(after.getPackageName().toString()) && textVisible(after, current.text);
+      finish(visible ? "sent" : "sent_unverified", visible
+        ? "Sent to " + current.label + "."
+        : "The send button was pressed, but the message was not confirmed in the chat. Check it before assuming it went out.");
       return;
     }
     AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -156,6 +174,26 @@ public final class UiAutomationService extends AccessibilityService {
       }
       scheduleTick();
       return;
+    }
+
+    // A WhatsApp link that the app could not resolve opens a "start chat" screen or the chat
+    // list. Typing the message there would either go to the wrong person or nowhere, so the
+    // target is confirmed first (the number somewhere on screen, or the contact name as title).
+    if (!current.verifiedTarget) {
+      if (!targetVisible(current, root)) {
+        if (!current.triedSearch && System.currentTimeMillis() - current.startedAt > 2500) {
+          current.triedSearch = true;
+          if (openChatBySearch(current, root)) { current.waitedForTarget = System.currentTimeMillis(); scheduleTick(); return; }
+        }
+        if (System.currentTimeMillis() - current.startedAt > 20000) {
+          finish("unavailable", "The chat with " + current.label + " did not open, so nothing was sent. Open "
+            + current.packageName + " once, and check that the number is saved in the app.");
+          return;
+        }
+        scheduleTick();
+        return;
+      }
+      current.verifiedTarget = true;
     }
 
     if (!current.textSet) {
@@ -184,6 +222,95 @@ public final class UiAutomationService extends AccessibilityService {
     } else {
       finish("failed", "Android refused the send button press. Nothing was sent.");
     }
+  }
+
+  /**
+   * True when the open chat really belongs to the requested person: the phone number (last eight
+   * digits, so country-code formats do not matter) or the saved name appears on the screen, or the
+   * app itself put the requested title on top.
+   */
+  private static boolean targetVisible(Job job, AccessibilityNodeInfo root) {
+    String wanted = job.phone == null ? "" : job.phone;
+    String tail = wanted.length() >= 8 ? wanted.substring(wanted.length() - 8) : wanted;
+    String name = normaliseLabel(job.label);
+    for (AccessibilityNodeInfo node : collectAll(root, 400)) {
+      CharSequence rawText = node.getText();
+      CharSequence rawDesc = node.getContentDescription();
+      String value = (rawText == null ? "" : rawText.toString()) + " " + (rawDesc == null ? "" : rawDesc.toString());
+      String digits = value.replaceAll("[^0-9]", "");
+      if (tail.length() >= 6 && digits.contains(tail)) return true;
+      String flat = normaliseLabel(value);
+      if (name.length() >= 3 && flat.contains(name)) return true;
+    }
+    return false;
+  }
+
+  /** True when (a meaningful part of) the message text is visible on the current screen. */
+  private static boolean textVisible(AccessibilityNodeInfo root, String text) {
+    if (text == null) return false;
+    String wanted = normaliseLabel(text);
+    if (wanted.length() < 6) return false;
+    String probe = wanted.length() > 40 ? wanted.substring(0, 40) : wanted;
+    for (AccessibilityNodeInfo node : collectAll(root, 500)) {
+      String value = normaliseLabel(label(node));
+      if (value.contains(probe)) return true;
+    }
+    return false;
+  }
+
+  private static String normaliseLabel(String value) {
+    return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]", "");
+  }
+
+  private static java.util.List<AccessibilityNodeInfo> collectAll(AccessibilityNodeInfo root, int limit) {
+    java.util.List<AccessibilityNodeInfo> out = new ArrayList<>();
+    collect(root, out, null, 0);
+    return out.size() > limit ? out.subList(0, limit) : out;
+  }
+
+  /**
+   * Fallback when a deep link cannot address the number: use the app's own search box, type the
+   * contact name or the number, and open the first result. This is the path that works for
+   * contacts the phone has saved but WhatsApp has not addressed yet.
+   */
+  private boolean openChatBySearch(Job job, AccessibilityNodeInfo root) {
+    if (!"com.whatsapp".equals(job.packageName) && !"com.whatsapp.w4b".equals(job.packageName)) return false;
+    AccessibilityNodeInfo search = null;
+    for (AccessibilityNodeInfo node : collectAll(root, 400)) {
+      if (!node.isEditable() || !node.isEnabled()) continue;
+      String hint = label(node);
+      String id = node.getViewIdResourceName();
+      boolean looksLikeSearch = (id != null && id.toLowerCase(Locale.ROOT).contains("search"))
+        || hint.toLowerCase(Locale.ROOT).contains("search") || hint.toLowerCase(Locale.ROOT).contains("খুঁজ");
+      if (looksLikeSearch) { search = node; break; }
+    }
+    if (search == null) return false;
+    String query = job.phone != null && job.phone.length() >= 8 ? "+" + job.phone : job.label;
+    if (query == null || query.trim().isEmpty()) return false;
+    if (!setTextOn(search, query)) return false;
+    // The result list appears under the search box; the first row is the person we just searched
+    // for, and tapping it opens that exact chat.
+    handler.postDelayed(() -> {
+      if (job != this.job || job.verifiedTarget) return;
+      AccessibilityNodeInfo current = getRootInActiveWindow();
+      if (current == null) return;
+      for (AccessibilityNodeInfo node : collectAll(current, 600)) {
+        if (!node.isClickable()) continue;
+        String value = normaliseLabel(label(node));
+        if (value.isEmpty()) continue;
+        String wantedName = normaliseLabel(job.label);
+        String digits = value.replaceAll("[^0-9]", "");
+        boolean matchesName = wantedName.length() >= 3 && value.contains(wantedName);
+        boolean matchesNumber = job.phone.length() >= 8 && digits.contains(job.phone.substring(job.phone.length() - 8));
+        if (matchesName || matchesNumber) {
+          node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+          job.waitedForTarget = System.currentTimeMillis();
+          scheduleTick();
+          return;
+        }
+      }
+    }, 1200);
+    return true;
   }
 
   // ================================================================ 2. screen reading
@@ -414,18 +541,25 @@ public final class UiAutomationService extends AccessibilityService {
   }
 
   private boolean setText(Job current, AccessibilityNodeInfo composer) {
+    return setTextOn(composer, current.text);
+  }
+
+  /** Types into one field; falls back to the clipboard for apps that ignore ACTION_SET_TEXT. */
+  private boolean setTextOn(AccessibilityNodeInfo field, String value) {
+    if (field == null || value == null) return false;
     Bundle arguments = new Bundle();
-    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.text);
+    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
     try {
-      if (composer.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments) && length(composer.getText()) > 0) return true;
-    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
+      if (field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments) && length(field.getText()) > 0) return true;
+    } catch (RuntimeException ignored) { /* tolerated: the field may be read-only */ }
     // Fallback for apps that ignore ACTION_SET_TEXT: paste from the clipboard.
     try {
       ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-      clipboard.setPrimaryClip(ClipData.newPlainText("Vishal Jarvis", current.text));
-      composer.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-      if (composer.performAction(AccessibilityNodeInfo.ACTION_PASTE)) return true;
-    } catch (RuntimeException ignored) { /* nothing to do on release of a temporary object */ }
+      if (clipboard == null) return false;
+      clipboard.setPrimaryClip(ClipData.newPlainText("Vishal Jarvis", value));
+      field.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+      if (field.performAction(AccessibilityNodeInfo.ACTION_PASTE)) return true;
+    } catch (RuntimeException ignored) { /* tolerated: clipboard access may be refused */ }
     return false;
   }
 
