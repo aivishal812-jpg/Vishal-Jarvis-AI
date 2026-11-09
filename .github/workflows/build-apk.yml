@@ -76,7 +76,9 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        # Publish for main and for the arena working branch, so a verified download link exists
+        # for every build the user is asked to install. Pull requests never publish.
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/arena/facfb0c6-vishal-jarvis-ai')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
