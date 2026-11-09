@@ -71,7 +71,7 @@ final class ProactiveScheduler {
   static void reschedule(Context context) {
     AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
     if (alarms == null) return;
-    PendingIntent tick = tick(context);
+    PendingIntent tick = alarm(context);
     alarms.cancel(tick);
     long now = System.currentTimeMillis();
     long next = Long.MAX_VALUE;
@@ -87,7 +87,7 @@ final class ProactiveScheduler {
     }
   }
 
-  private static PendingIntent tick(Context context) {
+  private static PendingIntent alarm(Context context) {
     Intent intent = new Intent(context, ProactiveReceiver.class).setAction(ACTION_TICK);
     return PendingIntent.getBroadcast(context, REQUEST_TICK, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
   }

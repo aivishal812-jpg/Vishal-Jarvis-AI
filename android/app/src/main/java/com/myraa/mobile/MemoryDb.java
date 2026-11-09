@@ -69,6 +69,7 @@ final class MemoryDb extends SQLiteOpenHelper {
       android.content.SharedPreferences prefs = context.getSharedPreferences("myraa.mobile.v1", Context.MODE_PRIVATE);
       JSONArray history = new JSONArray(prefs.getString("history", "[]"));
       MemoryDb db = get(context);
+      SQLiteDatabase writable = db.getWritableDatabase();
       String lastTask = null;
       for (int i = 0; i < history.length(); i++) {
         JSONObject turn = history.optJSONObject(i);
@@ -78,14 +79,15 @@ final class MemoryDb extends SQLiteOpenHelper {
         if (text.isEmpty() || (!"user".equals(role) && !"model".equals(role))) continue;
         String taskId = turn.optString("taskId", "legacy-" + i);
         long at = turn.optLong("at", System.currentTimeMillis());
-        int conversation = ensureConversation(db, taskId, "user".equals(role) ? text : "", at);
-        if (conversation > 0) addTurn(db, conversation, role, text, at);
+        int conversation = ensureConversation(writable, taskId, "user".equals(role) ? text : "", at);
+        if (conversation > 0) addTurn(writable, conversation, role, text, at);
         lastTask = taskId;
       }
+      SQLiteDatabase writable = db.getWritableDatabase();
       JSONArray facts = new JSONArray(prefs.getString("memory", "[]"));
       for (int i = 0; i < facts.length(); i++) {
         JSONObject fact = facts.optJSONObject(i);
-        if (fact != null) addFact(db, fact.optString("text"), "fact", fact.optLong("at", System.currentTimeMillis()));
+        if (fact != null) addFact(writable, fact.optString("text"), "fact", fact.optLong("at", System.currentTimeMillis()));
       }
       voidTask(lastTask);
     } catch (Exception ignored) {
