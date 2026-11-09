@@ -183,15 +183,15 @@ public class MainActivity extends Activity {
       try {
         DocumentReader.Result document = DocumentReader.read(this, uri);
         DocumentAttachment.stage(document);
-        emit(json("type", "document", "ok", true, "name", document.name,
+        emit(json("type", "document-attached", "ok", true, "name", document.name,
           "pages", document.pages, "chars", document.text.length(),
           "message", document.text.length() > 6000
             ? "Read " + (document.pages > 0 ? document.pages + " pages" : "the document") + ". Ask a question and I will use the part that matters."
             : "Read the document. Ask me anything about it."));
       } catch (DocumentReader.Unsupported unsupported) {
-        emit(json("type", "document", "ok", false, "message", unsupported.getMessage()));
+        emit(json("type", "document-attached", "ok", false, "message", unsupported.getMessage()));
       } catch (Exception failure) {
-        emit(json("type", "document", "ok", false, "message", "That file could not be read. Encrypted or scanned PDFs without a text layer need OCR, which is not available offline here."));
+        emit(json("type", "document-attached", "ok", false, "message", "That file could not be read. Scanned PDFs (pictures of pages) have no text layer; open one and use the screen reader instead."));
       }
     });
   }
@@ -584,7 +584,7 @@ public class MainActivity extends Activity {
           Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "text/*"});
           startActivityForResult(intent, PICK_DOCUMENT_REQUEST);
-        } catch (RuntimeException missing) { emit(json("type", "document", "ok", false, "message", "No file app is available on this phone.")); }
+        } catch (RuntimeException missing) { emit(json("type", "document-attached", "ok", false, "message", "No file app is available on this phone.")); }
       });
     }
     @JavascriptInterface public void openProSettings() { runOnUiThread(() -> startActivity(new Intent(MainActivity.this, ProSettingsActivity.class))); }

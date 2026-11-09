@@ -24,6 +24,7 @@ interface Bridge {
   deleteFact(id: string): void; clearMemory(): void; copyText(text: string): void; shareText(text: string): void;
   requestPermission(name: string): void; setTextScale(percent: number): void; exportTranscript(): void; shareTranscript(): void;
   pickImage?(): void; clearImage?(): void; openProSettings?(): void; takeLaunchAction?(): string;
+  pickDocument?(): void;
 }
 declare global {
   interface Window {
@@ -137,6 +138,7 @@ app.innerHTML = `
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
       </button>
       <div id="attach-preview" class="attach-preview" hidden><img id="attach-thumb" alt="Attached photo"><button id="attach-clear" aria-label="Remove photo">×</button></div>
+      <div id="document-preview" class="document-preview" hidden><span id="document-name">Document</span><button id="document-clear" aria-label="Remove document">×</button><button id="document-ask" aria-label="Ask about the document">Ask</button></div>
       <textarea id="input" rows="1" maxlength="8000" placeholder="বলুন বা লিখুন — বলুন কী করতে হবে…" aria-label="Message"></textarea>
       <button id="send" aria-label="Send message" title="Send">↑</button>
     </div>
@@ -677,6 +679,7 @@ async function runMobileWithFollowUp(action: Record<string, unknown>, originalTe
 }
 
 let attachedImage = false;
+let attachedDocument = false;
 function clearAttachment() {
   attachedImage = false; el('attach-preview').hidden = true; el<HTMLImageElement>('attach-thumb').removeAttribute('src');
 }
@@ -740,8 +743,24 @@ function send() {
 }
 
 el('send').onclick = send;
-el('attach').onclick = () => { if (!bridge?.pickImage) { notice('Photo questions run inside the Android app.'); return; } bridge.pickImage(); };
+el('attach').onclick = () => {
+  if (!bridge?.pickImage) { notice('Photo questions run inside the Android app.'); return; }
+  // One button, two kinds of attachment: a picture for the model to look at, or a PDF/text file
+  // whose text is extracted on the phone before the next message.
+  const choices = document.createElement('div');
+  choices.className = 'attach-choices';
+  choices.innerHTML = '<button type="button" data-kind="photo">Photo or screenshot</button><button type="button" data-kind="document">PDF or text file</button>';
+  choices.addEventListener('click', event => {
+    const kind = (event.target as HTMLElement).dataset.kind;
+    choices.remove();
+    if (kind === 'document' && bridge?.pickDocument) bridge.pickDocument();
+    else bridge.pickImage?.();
+  });
+  el('notice').replaceChildren(choices);
+};
 el('attach-clear').onclick = () => { bridge?.clearImage?.(); clearAttachment(); notice('Photo removed.'); };
+el('document-clear').onclick = () => { attachedDocument = false; el('document-preview').hidden = true; notice('Document removed from this chat.'); };
+el('document-ask').onclick = () => { el<HTMLTextAreaElement>('input').value = 'এই ডকুমেন্টটা সংক্ষেপে বুঝিয়ে দাও।'; el<HTMLTextAreaElement>('input').focus(); };
 el('pro-settings').onclick = () => { if (!bridge?.openProSettings) { notice('Jarvis Pro settings are in the Android app.'); return; } bridge.openProSettings(); };
 el('input').addEventListener('input', autosize);
 el('input').addEventListener('keydown', event => {

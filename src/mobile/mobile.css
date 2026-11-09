@@ -212,3 +212,11 @@ dialog input:not([type=checkbox]),dialog select{display:block;width:100%;margin-
 
 :root[data-motion="reduced"] *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 :root[data-motion="reduced"] .message.streaming p::after{animation:none}
+/* ---------- attachments ---------- */
+.document-preview{display:flex;align-items:center;gap:6px;max-width:38vw;padding:4px 6px;border:1px solid var(--accent);border-radius:10px;font-size:9px;color:var(--text)}
+.document-preview[hidden]{display:none}
+.document-preview span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:22vw}
+.document-preview button{min-height:0;padding:0 4px;font-size:11px;line-height:1.4;border:0;background:transparent;color:var(--muted)}
+.document-preview #document-clear{color:var(--danger);font-size:13px}
+.attach-choices{display:flex;gap:6px}
+.attach-choices button{flex:1;font-size:11px;padding:6px}
