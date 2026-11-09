@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
   private static final int PICK_DOCUMENT_REQUEST = 99;
   private static final int CAMERA_FOR_PHOTO_REQUEST = 97;
   private boolean pendingAutoVoice;
-  /** The last picture the user attached, kept so read_image_text can run on exactly that image. */
+  /** The last picture the user attached, so an attached photo stays the subject of the chat. */
   private Uri lastImageUri;
   private boolean shownOverLock;
   private boolean lastAccessibility = false;
@@ -702,8 +702,13 @@ public class MainActivity extends Activity {
           }
           public void event(JSONObject event) { if (generation.get() == token) emit(event); }
           public JSONObject tool(String name, JSONObject args) {
-            if (!foreground && MobileTools.ACTION.equals(name)) return json("status", "permission_required", "message", "Open Vishal Jarvis to perform this phone action. Nothing was done in the background.");
-            return runTool(name, args);
+            // The background job gets the same honest dispatch as the window; only the actions
+            // that genuinely need a chooser or a dialog come back as permission_required.
+            if (!foreground && MobileTools.ACTION.equals(name)
+                && !ActionRegistry.backgroundSafe(args.optString("action", ""))) {
+              return json("status", "permission_required", "message", "That action needs the Vishal Jarvis window. Nothing was done in the background.");
+            }
+            return runTool(name, args, id);
           }
         }).run(current);
         if (generation.get() != token) return;
@@ -743,33 +748,7 @@ public class MainActivity extends Activity {
   }
 
   /** Executes one tool call for the model and always returns a truthful status object. */
-  private JSONObject runTool(String name, JSONObject args) {
-    if (MobileTools.OCR.equals(name)) {
-      Uri uri = lastImageUri;
-      if (uri == null) {
-        return json("status", "invalid", "message", "Attach a picture with the photo button first, then ask again.");
-      }
-      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-      final JSONObject[] holder = new JSONObject[1];
-      network.execute(() -> {
-        try {
-          OcrTool.read(MainActivity.this, uri, args.optString("language", "bn"), result -> {
-            holder[0] = result;
-            latch.countDown();
-          });
-        } catch (RuntimeException failure) {
-          holder[0] = json("status", "failed", "message", "Text recognition could not start.");
-          latch.countDown();
-        }
-      });
-      try {
-        if (!latch.await(30, TimeUnit.SECONDS)) return json("status", "timeout", "message", "Text recognition took too long on that picture.");
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-        return json("status", "cancelled", "message", "Text recognition was cancelled.");
-      }
-      return holder[0] == null ? json("status", "failed", "message", "Text recognition returned nothing.") : holder[0];
-    }
+  private JSONObject runTool(String name, JSONObject args, String taskId) {
     if (MobileTools.REMEMBER.equals(name)) {
       String kind = args.optString("kind", "fact");
       String label = args.optString("name", "");
@@ -785,7 +764,7 @@ public class MainActivity extends Activity {
     // ones that open a chooser, a permission prompt or a confirmation use the window path.
     String directAction = args.optString("action", "");
     if (ActionRegistry.backgroundSafe(directAction) && !ProActions.backgroundSafe(directAction)) {
-      JSONObject direct = ActionRegistry.run(this, directAction, args);
+      JSONObject direct = ActionRegistry.run(this, directAction, args, taskId);
       emit(json("type", "tool-result", "name", name, "result", direct));
       return direct;
     }

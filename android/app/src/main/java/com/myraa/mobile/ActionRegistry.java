@@ -17,17 +17,20 @@ import org.json.JSONObject;
 final class ActionRegistry {
 
   /** Executors in priority order: the cheaper, Activity-free ones first. */
-  static JSONObject run(Context context, String action, JSONObject args) {
+  static JSONObject run(Context context, String action, JSONObject args, String taskId) {
     if (action == null || action.isEmpty()) {
       return AiAgent.json("status", "invalid", "message", "No action was given.");
     }
     JSONObject safe = args == null ? new JSONObject() : args;
     if (BackgroundActions.supports(action)) return BackgroundActions.run(context, action, safe);
-    if (ScreenTools.supports(action)) return ScreenTools.run(context, action, safe);
+    if (ScreenTools.supports(action)) return ScreenTools.run(context, action, safe, taskId);
     if (MemoryTools.supports(action)) return MemoryTools.run(context, action, safe);
     return AiAgent.json("status", "permission_required",
       "message", "This action needs the Vishal Jarvis window (it opens a chooser, a permission prompt or a confirmation). Nothing was done; open the app and ask again.");
   }
+
+  /** Convenience for callers that have no task id (the job and the window both pass one). */
+  static JSONObject run(Context context, String action, JSONObject args) { return run(context, action, args, null); }
 
   /** True when the action can run without a visible Activity, used by the background job. */
   static boolean backgroundSafe(String action) {

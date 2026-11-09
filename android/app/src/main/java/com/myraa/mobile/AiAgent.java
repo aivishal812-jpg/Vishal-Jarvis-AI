@@ -141,6 +141,7 @@ final class AiAgent {
       }
       if (round == MAX_ROUNDS) break;
       JSONArray responses = new JSONArray();
+      JSONArray screenParts = new JSONArray();
       for (int i = 0; i < received.calls.length() && i < MAX_CALLS; i++) {
         JSONObject call = received.calls.optJSONObject(i); if (call == null) continue;
         String name = call.optString("name", ""); JSONObject args = call.optJSONObject("args"); if (args == null) args = new JSONObject();
@@ -149,12 +150,26 @@ final class AiAgent {
         // A crash after this point must never automatically repeat a call, message or other side effect.
         if (MobileTools.ACTION.equals(name)) store.markToolStarted(taskId);
         JSONObject result = listener.tool(name, args);
+        // A screenshot taken by read_screen rides along in the tool reply, so the model can read
+        // screens the accessibility tree cannot describe.
+        String screen = ScreenImage.take(taskId);
+        if (screen != null) {
+          if (result != null) { try { result.put("screenImage", true); } catch (JSONException ignored) { } }
+          screenParts.put(json("text", "The screenshot of the current screen is attached. Read it directly; it is not stored anywhere."));
+          screenParts.put(json("inline_data", json("mime_type", "image/jpeg", "data", screen)));
+        }
         if (result == null) result = json("status", "failed", "message", "Android returned no result.");
         listener.event(json("type", "tool-result", "id", taskId, "name", name, "result", result));
         responses.put(json("functionResponse", json("name", name, "response", json("result", result))));
       }
       if (responses.length() == 0) break;
       contents.put(json("role", "model", "parts", received.parts));
+      if (screenParts.length() > 0) {
+        JSONArray combined = new JSONArray();
+        for (int i = 0; i < responses.length(); i++) combined.put(responses.opt(i));
+        for (int i = 0; i < screenParts.length(); i++) combined.put(screenParts.opt(i));
+        responses = combined;
+      }
       contents.put(json("role", "user", "parts", responses));
     }
     if (visible.length() == 0) throw new GeminiAccess.Failure("INCOMPLETE", 200, "I could not finish that request. Try saying it in one step.");

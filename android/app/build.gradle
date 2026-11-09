@@ -44,7 +44,4 @@ android {
 dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
-    // On-device text recognition for the picture action. Bundled, so it needs no Play Services
-    // account and no network; adds roughly 1.5 MB to the APK.
-    implementation 'com.google.mlkit:text-recognition:16.0.1'
 }

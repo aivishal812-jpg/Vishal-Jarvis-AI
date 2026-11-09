@@ -103,11 +103,11 @@ final class DocumentReader {
   }
 
   /** A very small PDF text extractor: object scan, Flate inflate, text operators. */
-  static final class Pdf {
+  public static final class Pdf {
     private final byte[] data;
-    Pdf(byte[] data) { this.data = data; }
+    public Pdf(byte[] data) { this.data = data; }
 
-    int pages() {
+    public int pages() {
       int count = 0, index = 0;
       while (true) {
         index = indexOf(data, "/Type".getBytes(Charset.forName("ISO-8859-1")), index);
@@ -120,7 +120,7 @@ final class DocumentReader {
       return count;
     }
 
-    String text() {
+    public String text() {
       StringBuilder out = new StringBuilder();
       Charset latin = Charset.forName("ISO-8859-1");
       int index = 0;

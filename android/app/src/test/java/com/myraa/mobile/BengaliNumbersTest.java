@@ -59,7 +59,16 @@ public class BengaliNumbersTest {
   @Test public void proseGivesNoTime() {
     assertNull(BengaliNumbers.time("আজ আবহাওয়া কেমন?"));
     assertNull(BengaliNumbers.time("what is the weather"));
+    assertNull(BengaliNumbers.time("আজকের আবহাওয়া কেমন"));
+    assertNull(BengaliNumbers.time("১০ মিনিট পরে মনে করিয়ে দিও"));
+    assertNull(BengaliNumbers.time("2 + 2 কত"));
+    assertNull(BengaliNumbers.time("আগামীকাল ৫ তারিখে"));
     assertEquals("", BengaliNumbers.describe("kal dekha hobe"));
+  }
+
+  @Test public void durationsAreNotClockTimes() {
+    assertNull(BengaliNumbers.time("বিশ মিনিট পর"));
+    assertEquals(20, BengaliNumbers.durationMinutes("বিশ মিনিট পর"));
   }
 
   @Test public void describeProducesTheNormalisedLine() {

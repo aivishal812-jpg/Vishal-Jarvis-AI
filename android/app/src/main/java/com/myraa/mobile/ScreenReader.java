@@ -21,58 +21,26 @@ final class ScreenReader {
   /**
    * Reading order text, capped so a long page cannot flood the model.
    *
-   * Accessibility trees miss canvases, games, PDFs and many custom-drawn screens, so a
-   * screenshot is taken first and its text recognised on the device (ML Kit); the tree text is
-   * used when that is not possible or returns nothing. The image never leaves the phone.
+   * Accessibility trees miss canvases, games, PDFs and many custom-drawn screens. When the tree
+   * is thin, one screenshot of the screen is attached to the same model turn (see
+   * {@link ScreenImage}) so the model can read it, exactly as it reads an attached photo. The
+   * picture is kept in memory only and dropped after that turn.
    */
-  static JSONObject read(int maxChars) {
+  static JSONObject read(int maxChars, String taskId) {
     if (!available()) return notEnabled();
     int cap = Math.max(500, Math.min(20000, maxChars));
     JSONObject tree = UiAutomationService.readScreen(cap, false);
     String treeText = tree.optString("text", "");
     if (treeText.length() > 400) return tree;
-    JSONObject captured = readPixels(cap);
-    if (captured == null) return tree;
-    String pixels = captured.optString("text", "");
-    if (pixels.length() >= treeText.length()) {
-      try {
-        return captured.put("message", "Read from a screenshot of the screen with on-device text recognition.")
-          .put("app", tree.optString("app", captured.optString("app", "")))
-          .put("accessibilityText", treeText.length());
-      } catch (Exception ignored) { return captured; }
-    }
-    return tree;
-  }
-
-  /** Screenshot + on-device recognition, or null when the phone does not allow it. */
-  private static JSONObject readPixels(int maxChars) {
-    UiAutomationService service = UiAutomationService.get();
-    if (service == null) return null;
-    android.graphics.Bitmap shot = service.screenshot();
-    if (shot == null) return null;
-    final Object lock = new Object();
-    final org.json.JSONArray holder = new org.json.JSONArray();
-    final boolean[] done = new boolean[1];
+    // The tree is thin: this screen is probably canvas-drawn, a PDF or a game. Attach a
+    // screenshot instead of guessing, and keep the little text the tree did give.
+    JSONObject shot = attachScreenshot(taskId);
+    if (!"info".equals(shot.optString("status"))) return tree;
     try {
-      ScreenOcr.recognise(shot, text -> {
-        synchronized (lock) {
-          try { holder.put(text == null ? "" : text); } catch (Exception ignored) { }
-          done[0] = true;
-          lock.notifyAll();
-        }
-      });
-      waitFor(done, lock, 12000);
-    } catch (RuntimeException ignored) {
-      return null;
-    } finally {
-      if (shot != null && !shot.isRecycled()) shot.recycle();
+      return shot.put("accessibilityText", treeText).put("app", tree.optString("app", ""));
+    } catch (Exception ignored) {
+      return shot;
     }
-    if (!done[0]) return null;
-    String text;
-    try { text = holder.optString(0, ""); } catch (RuntimeException failure) { return null; }
-    if (text.trim().isEmpty()) return null;
-    String capped = text.length() > maxChars ? text.substring(0, maxChars) : text;
-    return AiAgent.json("status", "info", "text", capped, "chars", capped.length(), "source", "screenshot");
   }
 
   static JSONObject lastMessage() {
@@ -82,7 +50,7 @@ final class ScreenReader {
 
   /**
    * Fills the visible empty fields with values the user gave in the same request.
-   * Never presses submit/send; the user does that.
+   * Never presses submit or send; the user does that.
    */
   static JSONObject fillForm(org.json.JSONArray values) {
     if (!available()) return notEnabled();
@@ -97,16 +65,27 @@ final class ScreenReader {
     return UiAutomationService.screenInfo();
   }
 
-  /** Waits for the recognition callback without blocking the main thread. */
-  static void waitFor(boolean[] done, Object lock, long millis) {
-    long deadline = System.currentTimeMillis() + millis;
-    synchronized (lock) {
-      while (!done[0]) {
-        long left = deadline - System.currentTimeMillis();
-        if (left <= 0) break;
-        try { lock.wait(left); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); break; }
-      }
+  /**
+   * Screenshot fallback: when the tree is nearly empty, capture the screen and attach it to the
+   * next model turn, so the model can read what the tree cannot describe.
+   */
+  static JSONObject attachScreenshot(String taskId) {
+    UiAutomationService service = UiAutomationService.get();
+    if (service == null) return notEnabled();
+    android.graphics.Bitmap shot = service.screenshot();
+    if (shot == null) {
+      return AiAgent.json("status", "unavailable",
+        "message", "Android did not allow a screenshot of this screen (some apps block capture, for example banking and streaming apps). The accessibility text is all I have.");
     }
+    try {
+      if (!ScreenImage.stage(taskId, shot)) {
+        return AiAgent.json("status", "failed", "message", "The screenshot could not be prepared.");
+      }
+    } finally {
+      if (!shot.isRecycled()) shot.recycle();
+    }
+    return AiAgent.json("status", "info", "screenImage", true,
+      "message", "A screenshot of the current screen is attached to this turn; read it directly. It is not saved anywhere.");
   }
 
   private ScreenReader() { }

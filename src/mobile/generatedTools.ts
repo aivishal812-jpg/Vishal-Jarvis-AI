@@ -248,25 +248,6 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
     }
   },
   {
-    "name": "read_image_text",
-    "description": "Read the text in a picture the user showed you (a screenshot, a photo of a sign, a bill, a form or a prescription). Use this instead of guessing when the user says 'this screenshot', 'ei chhobite ki ache' or asks about text you cannot see. The picture is the one the user attached with the photo button. Returns the recognised text on this phone; never invent text that is not returned.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "language": {
-          "type": "STRING",
-          "enum": [
-            "bn",
-            "en",
-            "hi"
-          ],
-          "description": "Script of the text, so the recogniser does not have to guess. Use bn for Bengali, hi for Hindi, en for English. Default bn."
-        }
-      },
-      "required": []
-    }
-  },
-  {
     "name": "remember_fact",
     "description": "Save one durable fact or preference about the user so future conversations can use it, for example their name, city, favourite language, or a standing routine. Only call this when the user asks you to remember something or states a lasting preference. Never store API keys, passwords, OTPs, card numbers or other secrets. Keep the fact under 240 characters, in the user's own words.",
     "parameters": {

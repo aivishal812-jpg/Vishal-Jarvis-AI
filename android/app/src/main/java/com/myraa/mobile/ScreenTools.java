@@ -21,11 +21,11 @@ final class ScreenTools {
     return false;
   }
 
-  static JSONObject run(Context context, String action, JSONObject args) {
+  static JSONObject run(Context context, String action, JSONObject args, String taskId) {
     try {
       if (args == null) args = new JSONObject();
       switch (action) {
-        case "read_screen": return ScreenReader.read(args.optInt("maxChars", 6000));
+        case "read_screen": return ScreenReader.read(args.optInt("maxChars", 6000), taskId);
         case "read_last_message": return ScreenReader.lastMessage();
         case "fill_form": return ScreenReader.fillForm(args.optJSONArray("values"));
         case "screen_info": return ScreenReader.screenInfo();

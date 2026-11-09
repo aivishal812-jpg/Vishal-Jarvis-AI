@@ -42,12 +42,40 @@ final class BengaliNumbers {
     BANGLISH.put("aat", 8); BANGLISH.put("ath", 8); BANGLISH.put("noy", 9); BANGLISH.put("dosh", 10);
   }
 
-  /** Words that make an hour PM. */
-  private static final Pattern AFTERNOON = Pattern.compile(
-      "(?i)\\b(pm|p\\.m|রাত|রাতে|সন্ধ্যা|সন্ধ্যায়|বিকেল|বিকাল|বিকেলে|দুপুর|দুপুরে|raat|rate|bikel|bikale|shondha|shondhe|dupur)\\b");
+  /** Words that make an hour PM, matched as whole tokens (\b is unreliable around Bengali). */
+  private static final java.util.Set<String> AFTERNOON_WORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+    "pm", "p.m", "p.m.", "রাত", "রাতে", "রাত্রি", "সন্ধ্যা", "সন্ধ্যায়", "সন্ধ্যে", "বিকেল", "বিকাল", "বিকেলে",
+    "দুপুর", "দুপুরে", "raat", "rate", "bikel", "bikale", "shondha", "shondhe", "dupur", "evening", "night"));
   /** Words that make an hour AM. */
-  private static final Pattern MORNING = Pattern.compile(
-      "(?i)\\b(am|a\\.m|সকাল|সকালে|ভোর|ভোরে|sokal|sokale|bhor|bhore)\\b");
+  private static final java.util.Set<String> MORNING_WORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+    "am", "a.m", "a.m.", "সকাল", "সকালে", "ভোর", "ভোরে", "sokal", "sokale", "bhor", "bhore", "morning"));
+  /** Words that mean the user is talking about a day, not a clock time. */
+  private static final java.util.Set<String> DAY_WORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+    "আজ", "আজকে", "কাল", "আগামীকাল", "গতকাল", "আগামী", "পরশু", "aj", "ajke", "kal", "agamikal", "gatokal", "ajkal"));
+  private static final java.util.Set<String> DATE_WORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+    "তারিখ", "tarikh", "জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট",
+    "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর", "january", "february", "march", "april", "may",
+    "june", "july", "august", "september", "october", "november", "december", "শে", "তারিখে"));
+
+  /** Splits into words, keeping Bengali combining marks attached to their base letter. */
+  private static java.util.List<String> words(String text) {
+    java.util.List<String> out = new java.util.ArrayList<>();
+    if (text == null) return out;
+    StringBuilder current = new StringBuilder();
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (Character.isLetterOrDigit(c) || Character.getType(c) == Character.NON_SPACING_MARK
+          || Character.getType(c) == Character.COMBINING_SPACING_MARK) current.append(c);
+      else if (current.length() > 0) { out.add(current.toString()); current.setLength(0); }
+    }
+    if (current.length() > 0) out.add(current.toString());
+    return out;
+  }
+
+  private static boolean anyWord(java.util.List<String> tokens, java.util.Set<String> wanted) {
+    for (String token : tokens) if (wanted.contains(token)) return true;
+    return false;
+  }
 
   private BengaliNumbers() { }
 
@@ -83,8 +111,12 @@ final class BengaliNumbers {
       if (part.isEmpty()) continue;
       Integer word = WORDS.get(part);
       if (word == null) word = BANGLISH.get(part);
-      if (word == null) return -1;
       any = true;
+      if (word == null && (part.endsWith("শো") || part.endsWith("শ"))) {
+        Integer hundred = WORDS.get(part.substring(0, part.length() - (part.endsWith("শো") ? 2 : 1)));
+        if (hundred != null && hundred > 0 && hundred < 10) word = hundred * 100;
+      }
+      if (word == null) return -1;
       if (word == 100 || word == 1000) {
         if (current == 0) current = 1;
         total += current * word;
@@ -94,16 +126,29 @@ final class BengaliNumbers {
     return any ? total + current : -1;
   }
 
+  /** Suffixes that only mean "o'clock" and must be stripped before reading the hour. */
+  private static final String[] CLOCK_SUFFIXES = { "টায়", "টাতে", "টার", "টা", "টো", "baje", "bajay", "tay", "ta", "oclock" };
+  /** Words that shift the minutes instead of naming an hour. */
+  private static final String[][] MODIFIERS = {
+    { "সাড়ে", "sare", "sade" }, { "সোয়া", "শোয়া", "shoya", "sowa" },
+    { "পৌনে", "পনে", "poune", "pone" }, { "দেড়", "deṛ", "der" }, { "আড়াই", "arai" }
+  };
+
   /**
-   * A spoken clock time as {hour, minute} on a 24-hour clock, or null when no time was said.
-   * ৮টা ৩০ / 8:30 / 8.30 pm / সাড়ে সাতটা / সোয়া সাতটা / পৌনে আটটা / দেড়টা / আড়াইটা.
+   * A spoken clock time as {hour, minute} on a 24-hour clock, or null when no clock time was
+   * said at all. Understands ৮টা ৩০, 8:30, 8.30 pm, সাড়ে সাতটা (7:30), সোয়া সাতটা (7:15),
+   * পৌনে আটটা (7:45), দেড়টা (1:30), আড়াইটা (2:30) and সকাল/সন্ধ্যা/রাত for am/pm.
    */
   static int[] time(String raw) {
     if (raw == null) return null;
     String text = digits(raw).toLowerCase(Locale.ROOT).trim();
     if (text.isEmpty()) return null;
-    boolean afternoon = AFTERNOON.matcher(text).find();
-    boolean morning = MORNING.matcher(text).find();
+    // "10 minutes later" or "2 hours" is a duration, not a time on the clock.
+    text = text.replaceAll("(\\d{1,4}|[\\p{L}]+)\\s*(ঘন্টা|ঘণ্টা|ghonta|ghanta|hours?|hrs?|hr|মিনিট|mins?|minute|minutes|min)\\b", " ").trim();
+    if (text.isEmpty()) return null;
+    java.util.List<String> tokens = words(text);
+    boolean afternoon = anyWord(tokens, AFTERNOON_WORDS);
+    boolean morning = anyWord(tokens, MORNING_WORDS);
 
     // 1. Explicit h:mm or h.mm
     Matcher colon = Pattern.compile("(\\d{1,2})\\s*[:.]\\s*(\\d{2})").matcher(text);
@@ -111,41 +156,69 @@ final class BengaliNumbers {
       int hour = Integer.parseInt(colon.group(1));
       int minute = Integer.parseInt(colon.group(2));
       if (minute > 59) return null;
-      if (afternoon && hour < 12) hour += 12;
-      if (morning && hour == 12) hour = 0;
-      return new int[]{hour % 24, minute};
-    }
-
-    // 2. "Xটা Y" — hour, then minutes
-    Matcher hm = Pattern.compile("(\\d{1,2}|[\\p{L}]+)\\s*(?:টা|টা|tar|টায়)\\s*(\\d{1,2})").matcher(text);
-    if (hm.find()) {
-      int hour = toInt(hm.group(1));
-      int minute = Integer.parseInt(hm.group(2));
-      if (hour >= 0 && hour <= 24 && minute < 60) return adjust(hour, minute, afternoon, morning);
-    }
-
-    // 3. Modifier + hour + টা
-    Matcher mod = Pattern.compile(
-        "(সাড়ে|সারে|সাড়ে|সোয়া|শোয়া|পৌনে|পনে|দেড়|দে\\s*ড়|আড়াই|আর|quarter|half|sare|sare|shoya|poune|pone)\\s*([\\p{L}\\d]{1,12})\\s*(?:টা|টায়|টার|বাজে|বাজায়|baje|ta)?").matcher(text);
-    while (mod.find()) {
-      String modifier = mod.group(1).toLowerCase(Locale.ROOT);
-      int hour = toInt(mod.group(2));
-      if (hour < 0 || hour > 24) continue;
-      int minute = 0;
-      if (modifier.startsWith("সাড়ে") || modifier.startsWith("সারে") || modifier.equals("sare") || modifier.equals("half")) minute = 30;
-      else if (modifier.startsWith("সোয়া") || modifier.startsWith("শোয়া") || modifier.startsWith("শো") || modifier.equals("shoya") || modifier.equals("quarter")) minute = 15;
-      else if (modifier.startsWith("পৌনে") || modifier.startsWith("পনে") || modifier.equals("poune") || modifier.equals("pone")) { hour -= 1; minute = 45; }
-      else if ("আড়াই".equals(modifier)) { hour = 2; minute = 30; }
-      else if (modifier.startsWith("দেড়") || modifier.startsWith("দে")) { if (hour == 1) { minute = 30; } }
       return adjust(hour, minute, afternoon, morning);
     }
 
-    // 4. A bare hour with a clock word: "সাতটায়", "8 baje"
-    Matcher bare = Pattern.compile("(\\d{1,2}|[\\p{L}]+)\\s*(?:টা|টায়|টার|টাতে|baje|bajay|o.?clock)\\b").matcher(text);
-    if (bare.find()) {
-      int hour = toInt(bare.group(1));
-      if (hour >= 0 && hour <= 24) return adjust(hour, 0, afternoon, morning);
+    // 2. Day/date words without a clock cue are dates, not times.
+    boolean dayWord = anyWord(tokens, DAY_WORDS);
+    boolean dateCue = anyWord(tokens, DATE_WORDS);
+    if ((dayWord || dateCue) && !Pattern.compile("(টা|টায়|টার|baje|bajay|o.?clock|:)").matcher(text).find()) return null;
+
+    // 3. Word form: a clock cue must be present, otherwise "2 + 2" would become 02:00.
+    boolean cue = Pattern.compile("(টা|টায়|টার|টা|baje|bajay|o.?clock|:|')").matcher(text).find();
+    boolean modifierCue = false;
+    for (String[] group : MODIFIERS) for (String word : group) if (text.contains(word)) modifierCue = true;
+    if (!cue && !modifierCue) return null;
+
+    // 3. Read the tokens in order, ignoring the "o'clock" endings.
+    java.util.List<String> clockTokens = new java.util.ArrayList<>();
+    for (String piece : words(text)) {
+      String token = stripSuffix(piece);
+      if (!token.isEmpty()) clockTokens.add(token);
     }
+    int hour = -1, minute = -1;
+    boolean half = false, quarter = false, threeQuarter = false, fixed = false;
+    for (String token : clockTokens) {
+      String modifier = modifierOf(token);
+      if (modifier != null) {
+        if (modifier.equals("হাফ")) { half = true; }
+        else if (modifier.equals("সোয়া")) { quarter = true; }
+        else if (modifier.equals("পৌনে")) { threeQuarter = true; }
+        else if (modifier.equals("দেড়")) { hour = 1; minute = 30; fixed = true; }
+        else if (modifier.equals("আড়াই")) { hour = 2; minute = 30; fixed = true; }
+        continue;
+      }
+      int number = toInt(token);
+      if (number < 0) continue;
+      if (hour < 0) hour = number;
+      else if (minute < 0 && number < 60) minute = number;
+    }
+    if (hour < 0 && !fixed) return null;
+    if (hour > 24) return null;
+    if (fixed) return adjust(hour, minute, afternoon, morning);
+    if (minute < 0) minute = half ? 30 : quarter ? 15 : threeQuarter ? 45 : 0;
+    if (threeQuarter) hour = hour - 1;
+    return adjust(hour, minute, afternoon, morning);
+  }
+
+  private static String stripSuffix(String token) {
+    String value = token;
+    for (String suffix : CLOCK_SUFFIXES) {
+      if (value.length() > suffix.length() && value.endsWith(suffix) && !value.equals(suffix)) {
+        value = value.substring(0, value.length() - suffix.length());
+        break;
+      }
+    }
+    return value;
+  }
+
+  /** The canonical modifier this token means, or null when it is not a modifier. */
+  private static String modifierOf(String token) {
+    for (String word : MODIFIERS[0]) if (token.equals(word)) return "হাফ";
+    for (String word : MODIFIERS[1]) if (token.equals(word)) return "সোয়া";
+    for (String word : MODIFIERS[2]) if (token.equals(word)) return "পৌনে";
+    for (String word : MODIFIERS[3]) if (token.equals(word)) return "দেড়";
+    for (String word : MODIFIERS[4]) if (token.equals(word)) return "আড়াই";
     return null;
   }
 

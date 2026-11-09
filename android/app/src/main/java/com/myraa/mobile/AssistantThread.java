@@ -103,7 +103,7 @@ final class AssistantThread {
           if (cancelled && value != null) value.disconnect();
         }
         public void event(JSONObject event) { AiTaskEvents.emit(event); }
-        public JSONObject tool(String name, JSONObject args) { return runTool(name, args); }
+        public JSONObject tool(String name, JSONObject args) { return runTool(name, args, id); }
       }).voiceMode(options.voice()).run(task);
       if (cancelled) return new Result(id, null, new InterruptedException("Cancelled"));
       if (!store.complete(id, answer)) return new Result(id, answer, new IllegalStateException("The answer could not be saved."));
@@ -134,11 +134,7 @@ final class AssistantThread {
   }
 
   /** Executes one tool call without an Activity, honestly. */
-  JSONObject runTool(String name, JSONObject args) {
-    if (MobileTools.OCR.equals(name)) {
-      return AiAgent.json("status", "permission_required",
-        "message", "Reading the text of a picture needs the Vishal Jarvis window. Open the app, attach the picture there and ask again. Nothing was done here.");
-    }
+  JSONObject runTool(String name, JSONObject args, String taskId) {
     if (!MobileTools.ACTION.equals(name)) {
       return AiAgent.json("status", "unsupported", "message", "That tool is not available here.");
     }
@@ -152,7 +148,7 @@ final class AssistantThread {
       }
       return MemoryStore.save(app, args.optString("fact", ""), kind.isEmpty() ? "fact" : kind);
     }
-    if (ActionRegistry.backgroundSafe(action)) return ActionRegistry.run(app, action, args);
+    if (ActionRegistry.backgroundSafe(action)) return ActionRegistry.run(app, action, args, taskId);
     UiTool ui = options.uiTool();
     if (ui != null) {
       try {

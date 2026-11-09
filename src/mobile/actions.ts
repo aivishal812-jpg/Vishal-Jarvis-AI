@@ -40,8 +40,7 @@ const byName = (name: string) => {
 };
 export const MOBILE_TOOL = byName('mobile_action');
 export const REMEMBER_TOOL = byName('remember_fact');
-export const OCR_TOOL = byName('read_image_text');
-export const LIVE_TOOLS = [MOBILE_TOOL, REMEMBER_TOOL, OCR_TOOL];
+export const LIVE_TOOLS = [MOBILE_TOOL, REMEMBER_TOOL];
 
 /** Action names declared to the model, in declaration order. */
 export const ACTION_ENUM: string[] =

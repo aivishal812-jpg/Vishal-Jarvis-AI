@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
  * text chat and Live voice share. Run with `npm test`.
  */
 import assert from 'node:assert/strict';
-import { ACTION_ENUM, LIVE_TOOLS, MOBILE_TOOL, OCR_TOOL, REMEMBER_TOOL, describeAction, parseMobileAction } from '../src/mobile/actions';
+import { ACTION_ENUM, LIVE_TOOLS, MOBILE_TOOL, REMEMBER_TOOL, describeAction, parseMobileAction } from '../src/mobile/actions';
 
 type Case = [input: string, expected: ReturnType<typeof parseMobileAction>];
 const cases: Case[] = [
@@ -114,9 +114,7 @@ if (JSON.stringify(declared) !== JSON.stringify(javaMirror)) {
   failed++;
   console.error('FAIL mobile_action enum drifted from MobileTools.java');
 }
-assert.equal(LIVE_TOOLS.length, 3);
-assert.equal(OCR_TOOL.name, 'read_image_text');
-assert.equal((OCR_TOOL.parameters.properties as Record<string, unknown>).language !== undefined, true);
+assert.equal(LIVE_TOOLS.length, 2);
 assert.equal(REMEMBER_TOOL.parameters.required?.[0], 'fact');
 assert.match(describeAction('set_alarm', { hour: 7, minute: 5 }), /07:05/);
 assert.equal(describeAction('unknown_action', {}), 'Working on your phone');
