@@ -113,7 +113,7 @@ final class MemoryDb extends SQLiteOpenHelper {
     if (requestId == null || requestId.isEmpty()) return 0;
     try (Cursor c = db.query("conversations", new String[]{"_id"}, "request_id=?", new String[]{requestId}, null, null, null)) {
       if (c.moveToFirst()) return c.getInt(0);
-    } catch (ignored RuntimeException) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (RuntimeException ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     ContentValues values = new ContentValues();
     values.put("request_id", requestId);
     values.put("prompt", prompt == null ? "" : prompt);
@@ -181,7 +181,7 @@ final class MemoryDb extends SQLiteOpenHelper {
         if (out.length() > 0) out.append("\n");
         out.append(c.getString(0)).append(' ').append(c.getString(1)).append(" = ").append(c.getString(2));
       }
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     return out.toString();
   }
 
@@ -193,11 +193,11 @@ final class MemoryDb extends SQLiteOpenHelper {
       SQLiteDatabase writable = db.getWritableDatabase();
       int conversation = ensureConversation(writable, requestId, role.equals("user") ? text : prompt, at);
       if (conversation > 0) addTurn(writable, conversation, role, text, at);
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
   }
 
   static void recordFact(Context context, String text, String kind) {
-    try { addFact(get(context).getWritableDatabase(), text, kind, System.currentTimeMillis()); } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    try { addFact(get(context).getWritableDatabase(), text, kind, System.currentTimeMillis()); } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
   }
 
   /** Keeps a user-approved entity such as "shop" -> "+919876543210" or "home" -> "Asansol". */
@@ -286,7 +286,7 @@ final class MemoryDb extends SQLiteOpenHelper {
       while (c.moveToNext()) {
         out.put(new JSONObject().put("role", c.getString(0)).put("text", c.getString(1)).put("at", c.getLong(2)));
       }
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     return AiAgent.json("status", out.length() == 0 ? "not_found" : "info",
       "message", out.length() == 0 ? "We have not talked yet." : "Here is what we last discussed.",
       "turns", out);
@@ -323,7 +323,7 @@ final class MemoryDb extends SQLiteOpenHelper {
         }
       }
       if (summary.length() > 0) saveSummary(context, requestId, summary.toString());
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
   }
 
   private static String firstSentence(String text) {
@@ -351,7 +351,7 @@ final class MemoryDb extends SQLiteOpenHelper {
       values.put("text", summary.trim());
       values.put("at", System.currentTimeMillis());
       db.insert("summaries", null, values);
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
   }
 
   static JSONArray summaries(Context context, int limit) {
@@ -359,7 +359,7 @@ final class MemoryDb extends SQLiteOpenHelper {
     try (Cursor c = get(context).getReadableDatabase().query("summaries", new String[]{"text", "at"},
         null, null, null, null, "_id DESC", String.valueOf(Math.max(1, limit)))) {
       while (c.moveToNext()) out.put(new JSONObject().put("text", c.getString(0)).put("at", c.getLong(1)));
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     return out;
   }
 
@@ -371,14 +371,14 @@ final class MemoryDb extends SQLiteOpenHelper {
       while (c.moveToNext()) {
         out.put(new JSONObject().put("id", "fact-" + c.getLong(0)).put("text", c.getString(1)).put("at", c.getLong(2)));
       }
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     try (Cursor c = get(context).getReadableDatabase().query("entities", new String[]{"kind", "name", "value"},
         null, null, null, null, "updated_at DESC", "20")) {
       while (c.moveToNext()) {
         out.put(new JSONObject().put("id", "entity-" + c.getString(1))
           .put("text", c.getString(0) + " " + c.getString(1) + " = " + c.getString(2)).put("at", System.currentTimeMillis()));
       }
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
     return out;
   }
 
@@ -389,6 +389,6 @@ final class MemoryDb extends SQLiteOpenHelper {
       db.delete("conversations", null, null);
       db.delete("summaries", null, null);
       db.delete("search", null, null);
-    } catch (ignored Exception) { /* tolerated: memory is best-effort and must never break a reply */ }
+    } catch (Exception ignored) { /* tolerated: memory is best-effort and must never break a reply */ }
   }
 }

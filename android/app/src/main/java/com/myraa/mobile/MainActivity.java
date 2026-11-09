@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
             if (locale != null && "bn".equals(locale.getLanguage())) { bengaliVoice = locale; break; }
           }
         }
-      } catch (ignored RuntimeException) { /* tolerated: the window may already be gone */ }
+      } catch (RuntimeException ignored) { /* tolerated: the window may already be gone */ }
     });
     mobileActions=new MobileActions(this,(id,result)->{
       ActionWaiter waiter=actionWaiters.remove(id);
@@ -336,7 +336,7 @@ public class MainActivity extends Activity {
         "calendar", granted(Manifest.permission.READ_CALENDAR), "homeCity", JarvisPrefs.homeCity(this),
         "fallbackModel", JarvisPrefs.fallbackModel(this), "reminders", ReminderStore.all(this).length(), "notes", NoteStore.all(this).length(),
         "imageAttached", ImageAttachment.hasStaged()));
-    } catch (ignored JSONException) { /* tolerated: the window may already be gone */ }
+    } catch (JSONException ignored) { /* tolerated: the window may already be gone */ }
 
     try {
       JSONArray pending = new JSONArray();
@@ -344,7 +344,7 @@ public class MainActivity extends Activity {
       value.put("pending", pending);
       AiTaskStore.Task failed = AiTaskStore.get(this).latestFailure();
       if (failed != null) value.put("lastFailedTask", json("id", failed.id, "text", failed.prompt, "message", failed.error));
-    } catch (ignored Exception) { /* tolerated: the window may already be gone */ }
+    } catch (Exception ignored) { /* tolerated: the window may already be gone */ }
     try { value.put("history", new JSONArray(prefs.getString("history", "[]"))); } catch (Exception ignored) { try { value.put("history", new JSONArray()); } catch (Exception unused) {} }
     try { value.put("audio", audioCapture == null ? new JSONObject() : audioCapture.diagnostics()); } catch (Exception ignored) { /* tolerated: the window may already be gone */ }
     return value;

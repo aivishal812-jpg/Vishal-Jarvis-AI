@@ -78,7 +78,7 @@ public final class WakeWordService extends Service {
       }
       // Held only while the loop is alive, with a timeout, so a stuck recognizer can never keep the CPU awake forever.
       if (!wakeLock.isHeld()) wakeLock.acquire(120_000);
-    } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+    } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
     if (!SpeechRecognizer.isRecognitionAvailable(this)) { lastStatus = "no speech recognizer on this phone (install Google app)"; stopSelf(); return START_NOT_STICKY; }
     BeepMuter.restore(this);
     watchMicrophone();
@@ -136,15 +136,15 @@ public final class WakeWordService extends Service {
           if (SystemClock.elapsedRealtime() - ownMicStoppedAt < 1500) return true; // our own tail; retry shortly
           otherMic = true; otherMicFreeSince = 0;
         }
-      } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+      } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
       return otherMic;
     }
     if (otherMicFreeSince != 0 && SystemClock.elapsedRealtime() - otherMicFreeSince > 2500) {
-      try { if (audio != null && !audio.getActiveRecordingConfigurations().isEmpty()) { otherMicFreeSince = 0; return true; } } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+      try { if (audio != null && !audio.getActiveRecordingConfigurations().isEmpty()) { otherMicFreeSince = 0; return true; } } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
       otherMic = false; return false;
     }
     if (otherMicFreeSince == 0) {
-      try { if (audio != null && audio.getActiveRecordingConfigurations().isEmpty()) otherMicFreeSince = SystemClock.elapsedRealtime(); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+      try { if (audio != null && audio.getActiveRecordingConfigurations().isEmpty()) otherMicFreeSince = SystemClock.elapsedRealtime(); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
     }
     return true;
   }
@@ -155,7 +155,7 @@ public final class WakeWordService extends Service {
     String line = text + (lastHeard.isEmpty() ? "" : " · heard: \"" + lastHeard + "\"");
     if (line.equals(shownText)) return;
     shownText = line;
-    try { getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, foregroundNotification(line)); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+    try { getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, foregroundNotification(line)); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
   }
 
   private static String errorName(int error) {
@@ -176,10 +176,10 @@ public final class WakeWordService extends Service {
     if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { lastStatus = "needs microphone permission"; stopSelf(); return; }
     if (paused()) {
       release();
-      if (wakeLock != null && wakeLock.isHeld()) { try { wakeLock.release(); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ } }
+      if (wakeLock != null && wakeLock.isHeld()) { try { wakeLock.release(); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ } }
       BeepMuter.unmuteNow(); if (LiveVoiceService.running || otherMic || VoiceCommandActivity.active) status(LiveVoiceService.running ? "Paused during the voice call" : otherMic ? "Paused: another app (keyboard voice typing) is using the microphone" : "Talking with you"); handler.postDelayed(this::loop, otherMic || LiveVoiceService.running ? 1500 : 400); return; }
     if (listening) return;
-    if (wakeLock != null && !wakeLock.isHeld()) { try { wakeLock.acquire(120_000); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ } }
+    if (wakeLock != null && !wakeLock.isHeld()) { try { wakeLock.acquire(120_000); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ } }
     try {
       if (recognizer == null) {
         recognizer = createRecognizer();
@@ -216,7 +216,7 @@ public final class WakeWordService extends Service {
         SpeechRecognizer local = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
         if (local != null) { onDevice = true; return local; }
       }
-    } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+    } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
     onDevice = false;
     return SpeechRecognizer.createSpeechRecognizer(this);
   }
@@ -271,14 +271,14 @@ public final class WakeWordService extends Service {
     try {
       Vibrator vibrator = getSystemService(Vibrator.class);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE));
-    } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+    } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
     // Hands-free popup: answers on top of whatever is on screen (or the lock screen) without opening the app.
     Intent open = new Intent(this, VoiceCommandActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
       .putExtra(VoiceCommandActivity.EXTRA_COMMAND, command == null ? "" : command).putExtra(JarvisPrefs.EXTRA_FROM_WAKE, true);
     wakeScreen();
     boolean started = false;
     if (AiTaskEvents.visible || Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(this)) {
-      try { startActivity(open); started = true; } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+      try { startActivity(open); started = true; } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
     }
     if (!started) {
       // Without "display over other apps" Android only lets us offer a tap-to-talk alert.
@@ -302,7 +302,7 @@ public final class WakeWordService extends Service {
         PowerManager.WakeLock screen = power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "VishalJarvis:screen");
         screen.acquire(5000);
       }
-    } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ }
+    } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ }
   }
 
   private String language() {
@@ -313,7 +313,7 @@ public final class WakeWordService extends Service {
   private void release() {
     if (listening) ownMicStoppedAt = SystemClock.elapsedRealtime();
     listening = false;
-    if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ } recognizer = null; }
+    if (recognizer != null) { try { recognizer.cancel(); recognizer.destroy(); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ } recognizer = null; }
   }
-  @Override public void onDestroy() { running = false; BeepMuter.unmuteNow(); try { if (audio != null && recordingCallback != null) audio.unregisterAudioRecordingCallback(recordingCallback); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ } recordingCallback = null; try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (ignored RuntimeException) { /* tolerated: the service may already be stopped */ } handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
+  @Override public void onDestroy() { running = false; BeepMuter.unmuteNow(); try { if (audio != null && recordingCallback != null) audio.unregisterAudioRecordingCallback(recordingCallback); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ } recordingCallback = null; try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (RuntimeException ignored) { /* tolerated: the service may already be stopped */ } handler.removeCallbacksAndMessages(null); release(); if (!"off".equals(lastStatus)) lastStatus = "stopped"; super.onDestroy(); }
 }

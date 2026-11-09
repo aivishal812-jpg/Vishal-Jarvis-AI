@@ -178,7 +178,7 @@ final class AiAgent {
         // screens the accessibility tree cannot describe.
         String screen = ScreenImage.take(taskId);
         if (screen != null) {
-          if (result != null) { try { result.put("screenImage", true); } catch (ignored JSONException) { /* tolerated: the result object is already built */ } }
+          if (result != null) { try { result.put("screenImage", true); } catch (JSONException ignored) { /* tolerated: the result object is already built */ } }
           screenParts.put(json("text", "The screenshot of the current screen is attached. Read it directly; it is not stored anywhere."));
           screenParts.put(json("inline_data", json("mime_type", "image/jpeg", "data", screen)));
         }

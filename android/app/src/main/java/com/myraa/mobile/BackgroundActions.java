@@ -384,7 +384,7 @@ final class BackgroundActions {
     try {
       value.put("status", status).put("message", message);
       if (data != null) value.put("data", data);
-    } catch (ignored Exception) { /* tolerated: a device API refused; the caller reports the failure honestly */ }
+    } catch (Exception ignored) { /* tolerated: a device API refused; the caller reports the failure honestly */ }
     return value;
   }
 

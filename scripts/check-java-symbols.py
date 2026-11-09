@@ -152,6 +152,17 @@ for cls, raw in files.items():
         line = text[:m.start()].count('\n') + 1
         problems.append(f'{cls}.java:{line} {target}.{meth}() -> only instance methods exist; static context cannot use it')
 
+# catch clauses: a swapped type and variable name only shows up in CI otherwise
+PRIMS = {'int', 'long', 'short', 'byte', 'char', 'boolean', 'float', 'double'}
+for cls, raw in files.items():
+    for m in re.finditer(r'catch\s*\(\s*([\w.]+)\s+([\w]+)\s*\)', strip(raw)):
+        type_name, var_name = m.group(1), m.group(2)
+        line = raw[:m.start()].count('\n') + 1
+        if var_name in PRIMS or (type_name in PRIMS):
+            problems.append(f'{cls}.java:{line} catch ({type_name} {var_name}) -> type and variable look swapped')
+        elif type_name[0].islower():
+            problems.append(f'{cls}.java:{line} catch ({type_name} {var_name}) -> "{type_name}" is not a class name')
+
 for p in problems:
     print(p)
 print(f'files={len(files)} private-declarations={sum(len(v) for v in private_names.values())} problems={len(problems)}')

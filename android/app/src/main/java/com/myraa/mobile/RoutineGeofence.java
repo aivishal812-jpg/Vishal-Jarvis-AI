@@ -29,7 +29,7 @@ final class RoutineGeofence {
       if (locations == null) return;
       Location last = locations.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
       if (last != null) check(context, placeName, last);
-    } catch (ignored RuntimeException) { /* tolerated: location may be unavailable */ }
+    } catch (RuntimeException ignored) { /* tolerated: location may be unavailable */ }
   }
 
   static void clear(Context context) {

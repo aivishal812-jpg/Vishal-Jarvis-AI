@@ -79,7 +79,7 @@ final class BeepMuter {
   }
 
   private static void unmuteStream(AudioManager audio, int stream) {
-    try { audio.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0); } catch (ignored RuntimeException) { /* tolerated: volume APIs are best-effort */ }
+    try { audio.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0); } catch (RuntimeException ignored) { /* tolerated: volume APIs are best-effort */ }
   }
 
   private static void save() {

@@ -58,7 +58,7 @@ final class AssistantThread {
   void cancel() {
     cancelled = true;
     javax.net.ssl.HttpsURLConnection current = connection;
-    if (current != null) { try { current.disconnect(); } catch (ignored RuntimeException) { /* tolerated: the connection is already gone */ } }
+    if (current != null) { try { current.disconnect(); } catch (RuntimeException ignored) { /* tolerated: the connection is already gone */ } }
   }
 
   boolean cancelled() { return cancelled; }

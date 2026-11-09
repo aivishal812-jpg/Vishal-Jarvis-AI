@@ -151,7 +151,7 @@ final class ProActions {
 
   // ------------------------------------------------------------ notifications & calendar
   private void notificationAccess(String id) {
-    try { activity.startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ }
+    try { activity.startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); } catch (RuntimeException ignored) { /* tolerated: the activity may already be gone */ }
     done.finish(id, "permission_required", "Turn on \"Vishal Jarvis\" in the Notification access screen I just opened, then ask again.", null);
   }
   private void readNotifications(String id, JSONObject args) throws Exception {
@@ -400,7 +400,7 @@ final class ProActions {
 
   /** Stops the ring tone and puts the alarm volume back where the user had it. */
   private void stopRinging() {
-    if (ringing != null) { try { ringing.stop(); } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ } ringing = null; }
+    if (ringing != null) { try { ringing.stop(); } catch (RuntimeException ignored) { /* tolerated: the activity may already be gone */ } ringing = null; }
     restoreAlarmVolume();
   }
 
@@ -409,7 +409,7 @@ final class ProActions {
     try {
       AudioManager audio = (AudioManager) activity.getSystemService(android.content.Context.AUDIO_SERVICE);
       if (audio != null) audio.setStreamVolume(AudioManager.STREAM_ALARM, alarmVolumeBefore, 0);
-    } catch (ignored RuntimeException) { /* tolerated: the activity may already be gone */ }
+    } catch (RuntimeException ignored) { /* tolerated: the activity may already be gone */ }
     alarmVolumeBefore = -1;
   }
 

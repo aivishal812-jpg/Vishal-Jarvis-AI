@@ -187,7 +187,7 @@ final class ProactiveScheduler {
       }
       prefs(context).edit().putLong(KEY_LAST_ENABLED, now).apply();
       reschedule(context);
-    } catch (ignored Exception) { /* tolerated: a notification may be blocked by the system */ }
+    } catch (Exception ignored) { /* tolerated: a notification may be blocked by the system */ }
     return shown.toString().trim();
   }
 
@@ -211,7 +211,7 @@ final class ProactiveScheduler {
         .setStyle(new Notification.BigTextStyle().bigText(body))
         .setContentIntent(open).setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE).build();
       manager.notify(id, notification);
-    } catch (ignored RuntimeException) { /* tolerated: a notification may be blocked by the system */ }
+    } catch (RuntimeException ignored) { /* tolerated: a notification may be blocked by the system */ }
   }
 
   private static String shorten(String text, int max) { return text == null ? "" : text.length() <= max ? text : text.substring(0, max) + "…"; }
