@@ -128,8 +128,8 @@ public final class ProSettingsActivity extends Activity {
         try { ProactiveScheduler.setDigestEvery(this, Integer.parseInt(v.trim())); toast("Saved"); render(); } catch (RuntimeException bad) { toast("Use minutes, 30 to 480"); }
       }));
     }
-    proactive.addView(toggle("Notice a missed call", ProactiveScheduler.missedEnabled(this), ProactiveScheduler::setMissed));
-    proactive.addView(toggle("Notice a one-time code (code stays hidden)", ProactiveScheduler.otpEnabled(this), ProactiveScheduler::setOtp));
+    proactive.addView(toggle("Notice a missed call", ProactiveScheduler.missedEnabled(this), (Flag) on -> ProactiveScheduler.setMissed(this, on)));
+    proactive.addView(toggle("Notice a one-time code (code stays hidden)", ProactiveScheduler.otpEnabled(this), (Flag) on -> ProactiveScheduler.setOtp(this, on)));
     proactive.addView(field("Optional place routine, e.g. office (leave empty for off)", ProactiveScheduler.routinePlace(this), v -> {
       if (!v.trim().isEmpty() && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
         requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
