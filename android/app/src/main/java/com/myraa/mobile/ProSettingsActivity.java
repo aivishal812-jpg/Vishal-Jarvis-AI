@@ -104,7 +104,7 @@ public final class ProSettingsActivity extends Activity {
       prefs.edit().putBoolean(JarvisPrefs.CALL_AUTO_ANSWER, on).apply();
       if (on) {
         if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, CALL_REQUEST);
-        else alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", CallAssistService::openAnswerPermission);
+        else alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", () -> CallAssistService.openAnswerPermission(this));
       }
       root.postDelayed(this::render, 600);
     }));
@@ -299,7 +299,7 @@ public final class ProSettingsActivity extends Activity {
     }
     if (request == CALL_REQUEST) {
       if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-        alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", CallAssistService::openAnswerPermission);
+        alert("Answering needs the default-phone role", "Android only lets the app that handles phone calls pick up a ringing call. The next screen offers that choice; if you keep your normal phone app, Jarvis still shows the call card and suggests answers, it just cannot press Answer for you.", () -> CallAssistService.openAnswerPermission(this));
       } else {
         JarvisPrefs.get(this).edit().putBoolean(JarvisPrefs.CALL_AUTO_ANSWER, false).apply();
         toast("Without the Phone permission Jarvis cannot answer calls.");
