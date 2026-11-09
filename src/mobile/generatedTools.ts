@@ -65,7 +65,8 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
             "screen_info",
             "missed_calls",
             "otp_summary",
-            "what_did_i_say"
+            "what_did_i_say",
+            "call_assistant"
           ],
           "description": "Which Android action to perform."
         },
@@ -206,9 +207,13 @@ export const GENERATED_TOOLS: ToolDeclaration[] = [
           "enum": [
             "play_pause",
             "next",
-            "previous"
+            "previous",
+            "on",
+            "off",
+            "status",
+            "speak"
           ],
-          "description": "Media key to send. Only for media_control."
+          "description": "Media key for media_control (play_pause, next, previous); on / off / status / speak for call_assistant."
         },
         "level": {
           "type": "INTEGER",

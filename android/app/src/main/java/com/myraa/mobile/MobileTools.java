@@ -31,7 +31,7 @@ public final class MobileTools {
           .put("get_weather").put("daily_briefing")
           .put("ring_phone").put("open_jarvis_settings")
           .put("read_screen").put("read_last_message").put("fill_form").put("screen_info")
-          .put("missed_calls").put("otp_summary").put("what_did_i_say"),
+          .put("missed_calls").put("otp_summary").put("what_did_i_say").put("call_assistant"),
           
           "description", "Which Android action to perform."),
         "app", json("type", "STRING", "description", "For send_message: whatsapp, telegram, instagram, messenger or sms. For open_app: the app name as shown on the home screen, such as YouTube, Chrome, Calculator. For play_media: youtube, youtube_music, spotify, prime_music, gaana or jiosaavn only when the user named a player; omit it otherwise."),
@@ -65,8 +65,8 @@ public final class MobileTools {
         "all", json("type", "BOOLEAN", "description", "For delete_calendar_event: true only when the user asked to delete every upcoming event. Defaults to false, which deletes a single event."),
         "city", json("type", "STRING", "description", "For get_weather and daily_briefing: the city name. Omit to use the user's saved home city."),
         "limit", json("type", "INTEGER", "description", "For read_notifications: how many to read, 1-20. Default 8."),
-        "command", json("type", "STRING", "enum", new JSONArray().put("play_pause").put("next").put("previous"),
-          "description", "Media key to send. Only for media_control."),
+        "command", json("type", "STRING", "enum", new JSONArray().put("play_pause").put("next").put("previous").put("on").put("off").put("status").put("speak"),
+          "description", "Media key for media_control (play_pause, next, previous); on / off / status / speak for call_assistant."),
         "level", json("type", "INTEGER", "description", "Target media volume as a percentage, 0-100. Only for set_volume."),
         "maxChars", json("type", "INTEGER", "description", "For read_screen: how much screen text to return, 500-20000. Default 6000."),
         "values", json("type", "ARRAY", "items", json("type", "STRING"), "description", "For fill_form: the exact values to type, in the order the empty fields appear on the screen. Only values the user gave in this request; never guess or invent a password, OTP or card number."),
@@ -133,8 +133,14 @@ public final class MobileTools {
     prompt.append("If the user attached a photo, it is included in their message: describe, read, translate, solve or calculate from it as asked, and say clearly if something is unreadable.\n");
     prompt.append("\n## Hard limits\n");
     prompt.append("Wi-Fi, Bluetooth, mobile data and similar switches open as system panels because Android forbids apps from changing them silently. ");
-    prompt.append("You cannot take screenshots, read files, send messages without the user's explicit send instruction, or reach apps the accessibility service is not scoped to. Say so plainly if asked. ");
+    prompt.append("You CAN read the current screen and take a screenshot of it yourself (action read_screen; it attaches the picture to this turn when the screen has no readable text), read a PDF or text file the user attaches (its text arrives in the request), and send a message once the user has said send. Do not claim you cannot do these. ");
+    prompt.append("You cannot change Wi-Fi/Bluetooth/mobile data silently, start a call recording, or read the call's own audio line (see the call assistant section). Do not claim you can record calls. ");
     prompt.append("For relative times such as 'tomorrow at 6', resolve them from the local time above and state the absolute date and time you used.\n");
+    prompt.append("\n## Phone calls: answering and taking part\n");
+    prompt.append("The app has a call assistant (Jarvis Pro → Call assistant) that can pick up a ringing call by itself, switch the speaker on, show a live transcript of the conversation in a floating card and suggest one answer per sentence; in speak mode it says the answer out loud into the call. So never answer that you cannot receive a call or cannot understand a call. ");
+    prompt.append("You cannot start or stop the call assistant with an action: it is a switch the user turns on. When asked, tell them the exact path (Jarvis Pro settings → Call assistant → take part in calls / answer incoming calls) and what each switch does. ");
+    prompt.append("Be precise about the limit: Android does not let an ordinary app listen to the call's own audio line, so the other person's voice is heard through the speakerphone and the microphone. If the user reports that Jarvis does not hear the call, check three things in this order: microphone permission, the 'display over other apps' permission for the card, and whether the phone blocks microphone access during a call. Say which one is missing. ");
+    prompt.append("Never say Jarvis can record a call: it cannot on any normal Android phone.\n");
     prompt.append("\n## Memory and recall\n");
     prompt.append("You keep a searchable record of earlier conversations and saved facts. For 'what did I tell you about…', 'what is my shop number', 'what did we discuss last time' use what_did_i_say with the words the user said; it searches conversations, facts and saved contacts/places. Answer from what it returns and say plainly when it finds nothing. ");
     prompt.append("To save a structured entry (a shop number, a place, a routine) call remember_fact with kind, name and value; a plain preference only needs fact. Never store passwords, OTPs, card numbers or API keys.\n");
@@ -163,6 +169,8 @@ public final class MobileTools {
     prompt.append("Keep every reply short: one or two sentences, about 25 words at most, unless the user clearly asks for details, a list, a story or an explanation. ");
     prompt.append("No greetings, no repeating the question, no filler, no 'let me know if…' offers. After a phone action, confirm in two to six words. ");
     prompt.append("This rule outranks any personality instruction about being chatty.\n");
+    prompt.append("\n## Never deny a capability this app has\n");
+    prompt.append("Before answering \"I cannot do that\", check the capability list in this prompt and the tool list. Opening apps, playing media, calls, SMS and app messages (WhatsApp/Telegram/Messenger/Instagram), alarms, timers, reminders, notes, calendar reading and deleting, weather, briefing, notifications, screen reading with screenshots, form filling, PDF reading, long-term memory recall, the wake word and the call assistant are all supported. Denying one of them is a bug: name the switch or permission that is actually missing instead.\n");
     return prompt.toString();
   }
 

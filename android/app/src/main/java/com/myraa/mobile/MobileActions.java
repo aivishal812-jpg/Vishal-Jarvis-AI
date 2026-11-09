@@ -287,6 +287,7 @@ public final class MobileActions {
       if("cancel_send".equals(action)){cancelSend(id);return;}
       if("sim_info".equals(action)){simInfo(id);return;}
       if("set_flashlight".equals(action)){setFlashlight(id,args.optBoolean("enabled",false));return;}
+      if("call_assistant".equals(action)){callAssistant(id,args);return;}
       if("open_wifi_settings".equals(action)){openWifiSettings(id);return;}
       if("open_settings_panel".equals(action)){openPanel(id,args.optString("panel"));return;}
       if("set_alarm".equals(action)){setAlarm(id,args.optInt("hour",-1),args.optInt("minute",-1),args.optString("label"));return;}
@@ -809,6 +810,40 @@ public final class MobileActions {
       manager.setTorchMode(cameraId,enabled);finish(id,"torch_changed",enabled?"Flashlight অন করেছি।":"Flashlight বন্ধ করেছি।");
     }catch(SecurityException e){finish(id,"permission_required","Flashlight ব্যবহারের জন্য Camera permission দিতে হবে।");}
     catch(Exception e){finish(id,"failed","Flashlight পরিবর্তন করা যায়নি। অন্য কোনো অ্যাপ ক্যামেরা ব্যবহার করছে কি না দেখো।");}
+  }
+  /**
+   * Turns the call assistant on or off and reports what it will really do.
+   *
+   * Android does not let an app flip an accessibility or default-phone switch, so "status" is the
+   * honest answer when the user only asks whether it is on.
+   */
+  private void callAssistant(String id,JSONObject args){
+    String wanted=normalize(args.optString("command","status"));
+    CallCoach.Mode mode=JarvisPrefs.callMode(activity);
+    if(wanted.equals("off")||wanted.equals("stop")||wanted.equals("disable")){
+      JarvisPrefs.get(activity).edit().putString(JarvisPrefs.CALL_ASSIST,"off").apply();
+      CallAssistService.stop(activity);
+      finish(id,"call_assistant_changed","Call assistant off. Nothing will listen during calls.");
+      return;
+    }
+    if(wanted.equals("on")||wanted.equals("start")||wanted.equals("enable")||wanted.equals("suggest")||wanted.equals("speak")){
+      String value=wanted.equals("speak")?"speak":(mode==CallCoach.Mode.OFF?"suggest":mode.key);
+      JarvisPrefs.get(activity).edit().putString(JarvisPrefs.CALL_ASSIST,value).apply();
+      if(granted(Manifest.permission.RECORD_AUDIO))CallAssistService.start(activity);
+      boolean overlay=Settings.canDrawOverlays(activity);
+      StringBuilder message=new StringBuilder("Call assistant ").append(value.equals("speak")?"on: it will speak the suggested answer into the call.":"on: it will suggest answers on the card.");
+      if(!granted(Manifest.permission.RECORD_AUDIO))message.append(" Allow the Microphone permission so it can hear the call.");
+      if(!overlay)message.append(" Allow \"display over other apps\" so the call card can appear.");
+      if(!JarvisPrefs.callAutoAnswer(activity))message.append(" Turn on \"Answer incoming calls automatically\" in Jarvis Pro settings if it should pick up ringing calls.");
+      finish(id,"call_assistant_changed",message.toString());
+      return;
+    }
+    boolean speaking=mode==CallCoach.Mode.SPEAK;
+    finish(id,"call_assistant",CallAssistService.describeMode(activity)
+      +". Microphone "+(granted(Manifest.permission.RECORD_AUDIO)?"allowed":"not allowed")
+      +", call card "+(Settings.canDrawOverlays(activity)?"allowed":"not allowed")
+      +", auto answer "+(JarvisPrefs.callAutoAnswer(activity)?"on":"off")
+      +", speaking "+(speaking?"on":"off")+".");
   }
   private void openWifiSettings(String id){
     Intent intent=Build.VERSION.SDK_INT>=29?new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY):new Intent(Settings.ACTION_WIFI_SETTINGS);
