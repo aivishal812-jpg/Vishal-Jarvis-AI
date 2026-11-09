@@ -32,6 +32,22 @@ final class ActionRegistry {
   /** Convenience for callers that have no task id (the job and the window both pass one). */
   static JSONObject run(Context context, String action, JSONObject args) { return run(context, action, args, null); }
 
+  /**
+   * Actions that have no window implementation and are therefore always answered here.
+   * This exists so that adding a headless tool can never take an existing action away from the
+   * UI path that knows how to ask for a permission or show a chooser.
+   */
+  static boolean newOnly(String action) {
+    if (action == null) return false;
+    for (String candidate : NEW_ONLY) if (candidate.equals(action)) return true;
+    return false;
+  }
+
+  private static final String[] NEW_ONLY = {
+    "what_did_i_say", "missed_calls", "otp_summary", "save_memory_summary",
+    "read_screen", "read_last_message", "fill_form", "screen_info"
+  };
+
   /** True when the action can run without a visible Activity, used by the background job. */
   static boolean backgroundSafe(String action) {
     return BackgroundActions.supports(action) || ScreenTools.supports(action) || MemoryTools.supports(action);

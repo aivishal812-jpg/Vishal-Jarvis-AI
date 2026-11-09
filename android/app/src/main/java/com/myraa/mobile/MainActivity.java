@@ -693,12 +693,10 @@ public class MainActivity extends Activity {
           }
           public void event(JSONObject event) { if (generation.get() == token) emit(event); }
           public JSONObject tool(String name, JSONObject args) {
-            // The background job gets the same honest dispatch as the window; only the actions
-            // that genuinely need a chooser or a dialog come back as permission_required.
-            if (!foreground && MobileTools.ACTION.equals(name)
-                && !ActionRegistry.backgroundSafe(args.optString("action", ""))) {
-              return json("status", "permission_required", "message", "That action needs the Vishal Jarvis window. Nothing was done in the background.");
-            }
+            // runTool already answers headless actions directly and sends everything else through
+            // the window handlers, which are the ones that can ask for a permission or open a
+            // chooser. Nothing is refused here any more: refusing here is what made device actions
+            // silently stop working whenever the app briefly reported itself as not foreground.
             return runTool(name, args, id);
           }
         }).run(current);
@@ -753,8 +751,12 @@ public class MainActivity extends Activity {
     if (!MobileTools.ACTION.equals(name)) return json("status", "unsupported", "message", "That tool is not available in the Vishal Jarvis Android app.");
     // Device actions that need no Activity run straight away, in the foreground or not. Only the
     // ones that open a chooser, a permission prompt or a confirmation use the window path.
+    // In the visible app every action that has its own window handler keeps using it (permission
+    // prompts, choosers, confirmations). The registry is only the answer for headless tools and
+    // for the background case, where nothing can be shown.
     String directAction = args.optString("action", "");
-    if (ActionRegistry.backgroundSafe(directAction) && !ProActions.backgroundSafe(directAction)) {
+    boolean onlyHeadless = ActionRegistry.newOnly(directAction);
+    if (onlyHeadless || (!foreground && ActionRegistry.backgroundSafe(directAction))) {
       JSONObject direct = ActionRegistry.run(this, directAction, args, taskId);
       emit(json("type", "tool-result", "name", name, "result", direct));
       return direct;

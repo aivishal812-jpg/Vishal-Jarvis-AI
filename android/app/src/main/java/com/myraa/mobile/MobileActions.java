@@ -272,11 +272,6 @@ public final class MobileActions {
         });
         return;
       }
-      if(ActionRegistry.backgroundSafe(action)&&!ProActions.backgroundSafe(action)){
-        JSONObject direct=ActionRegistry.run(activity,action,args);
-        finish(id,direct.optString("status","failed"),direct.optString("message",""),direct);
-        return;
-      }
       if(ProActions.supports(action)){pro().handle(id,action,args);return;}
       if("open_app".equals(action)){openApp(id,args.optString("app"));return;}
       if("search_youtube".equals(action)||"search_web".equals(action)){
@@ -305,6 +300,14 @@ public final class MobileActions {
       if("device_status".equals(action)){deviceStatus(id);return;}
       if("list_apps".equals(action)){listApps(id);return;}
       if("open_camera".equals(action)){openCamera(id);return;}
+      // Actions that only exist as headless tools (screen reading, recall, proactive summaries)
+      // are answered by the registry. Every action with a window handler above keeps using that
+      // handler, so permission prompts, choosers and confirmations behave exactly as before.
+      if(ActionRegistry.newOnly(action)){
+        JSONObject direct=ActionRegistry.run(activity,action,args);
+        finish(id,direct.optString("status","failed"),direct.optString("message",""),direct);
+        return;
+      }
       finish(id,"unsupported","Supported actions: open apps, open a web page, search YouTube/web, play a song or video in YouTube, YouTube Music, Spotify, Prime Music, Gaana or JioSaavn, call a number or saved contact (direct call, optional SIM), send WhatsApp/Telegram/Instagram/Messenger/SMS messages after confirmation, flashlight, Wi-Fi and system panels, alarms, timers, calendar events, navigation, share, copy, media and volume control, device status, SIM info, installed apps, reminders, notes, notifications, calendar, weather, daily briefing and find-my-phone.");
     }catch(IllegalArgumentException e){finish(id,"invalid",e.getMessage());}catch(Exception e){finish(id,"failed","Android could not complete this action. Nothing was sent.");}
   }

@@ -49,14 +49,8 @@ final class ProActions {
    * (ring_phone, settings pages, deleting calendar events) is left to the window path.
    */
   static boolean backgroundSafe(String action) {
-    if (action == null) return false;
-    for (String a : BACKGROUND_SAFE) if (a.equals(action)) return true;
-    return false;
+    return false; // every ProAction keeps its window path; the job uses BackgroundActions instead
   }
-
-  private static final String[] BACKGROUND_SAFE = { "set_reminder", "list_reminders", "cancel_reminder",
-    "save_note", "list_notes", "delete_note", "read_notifications", "clear_notifications",
-    "read_calendar", "get_weather", "daily_briefing" };
 
   void handle(String id, String action, JSONObject args) throws Exception {
     switch (action) {

@@ -51,6 +51,13 @@ public final class GeminiAccess {
       if (entry.getKey().equals(reason) || message.contains(entry.getKey())) return new Failure(entry.getKey(), status, entry.getValue());
     }
     String lower = message.toLowerCase(Locale.ROOT);
+    // A 400 that no rule explains is usually a model name or request-shape problem. Showing the
+    // provider's own sentence (trimmed, without the key) is what makes that fixable on the phone.
+    if (status == 400 && !message.isEmpty()) {
+      String safe = message.replaceAll("AIza[0-9A-Za-z_-]{10,}", "[key]");
+      if (safe.length() > 240) safe = safe.substring(0, 240) + "…";
+      return new Failure("BAD_REQUEST", status, "Google rejected the request: " + safe + " Choose a supported Gemini model in Settings, then try again.");
+    }
     if (lower.contains("leaked") || lower.contains("exposed")) return new Failure("API_KEY_LEAKED", status, "Google blocked this key as exposed. Replace it in Google AI Studio and paste the new key only into Vishal Jarvis's key field, never into chat.");
     if (lower.contains("api key not valid")) return new Failure("API_KEY_INVALID", status, known.get("API_KEY_INVALID"));
     if (status == 404) return new Failure("MODEL_UNAVAILABLE", status, "Google could not find this model for your key. Check the model identifier in Settings or choose a model available to your project.");

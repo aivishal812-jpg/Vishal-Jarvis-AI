@@ -143,7 +143,10 @@ final class AiAgent {
         }
         if (research && failure.status == 400) throw new GeminiAccess.Failure("SEARCH_UNAVAILABLE", 400,
           "Google Search grounding is unavailable for this model or project. Choose a supported Gemini model in Settings and retry this research task.");
-        if (research || suppressFunctions || round != 0 || visible.length() > 0 || failure.status != 400) throw failure;
+        boolean toolComplaint = failure.getMessage() != null
+          && (failure.getMessage().toLowerCase(java.util.Locale.ROOT).contains("tool")
+              || failure.getMessage().toLowerCase(java.util.Locale.ROOT).contains("function"));
+        if (research || suppressFunctions || round != 0 || visible.length() > 0 || failure.status != 400 || !toolComplaint) throw failure;
         suppressFunctions = true;
         listener.event(json("type", "capability", "tools", false, "message", "This model does not support device actions. Replying in text only; choose another model in Settings for actions."));
         received = stream(key, model, instruction, null, false, contents);
