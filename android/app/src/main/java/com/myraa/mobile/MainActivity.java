@@ -147,7 +147,8 @@ public class MainActivity extends Activity {
       // A page that never finishes loading leaves a blank window with no explanation. If the WebView
       // has not reported a finished load after 12 seconds, show what is wrong instead of nothing.
       final int mine = watchdogGeneration = watchdogGeneration + 1;
-      web.postDelayed(() -> {
+      // createWebView() may have replaced the window with its own message and left `web` null.
+      if (web != null) web.postDelayed(() -> {
         if (mine != watchdogGeneration || pageLoaded) return;
         if (!scriptsLoaded) showWebViewError(stuckPageMessage());
       }, 12000);
