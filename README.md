@@ -9,6 +9,12 @@
 3. অথবা **Releases** অংশ থেকে সরাসরি `.apk` নামিয়ে নিন।
 4. ফোনে "Unknown apps install" অনুমতি দিয়ে ইনস্টল করুন। আগের অন্য-কী-তে সাইন করা ভার্সন থাকলে প্রথমবার আনইনস্টল করে নিতে হবে।
 
+## Stark-workshop HUD (crimson)
+
+চরিত্রের চারপাশে এখন **Stark Industries ধাঁচের HUD**: gear-tooth রিং, ঘুরতে থাকা arc segment, sweeping beam, মাঝখানে crimson triangle badge — সাথে চারটে ডেটা প্যানেল (SIGNAL ANALYSER waveform, CPU/MEM/BATT/ACT gauge, NETWORK TRAFFIC, REQUEST FLOW), কোণে বড় ঘড়ি ও তারিখ। সব **কোড দিয়ে আঁকা (SVG/canvas)** — কোনো ছবি ডাউনলোড নেই, তাই APK ভারী হয় না।
+প্যানেলের সংখ্যা **সত্যি**: ঘড়ি/তারিখ, অ্যাপের মেমরি, ফোনের ব্যাটারি %, online/offline, সেশন সময়, কথোপকথনের turn সংখ্যা। CPU/ACT আসলে অ্যাসিস্ট্যান্টের নিজের ব্যস্ততা — তাই নাম দেওয়া হয়েছে "গেজ", ভুয়া তাপমাত্রা/আবহাওয়া দেখানো হয় না।
+চরিত্রটা এখন রিংয়ের **ভেতরে** দাঁড়ায়, আর HUD-ও react করে: কথা বললে SIGNAL waveform ওঠে, state বদলায়।
+
 ## চেহারা (সর্বশেষ)
 
 পুরো ইন্টারফেস এখন **futuristic crimson** — গভীর কালচে-লাল ব্যাকগ্রাউন্ড, ধীরে ভাসা crimson aurora, HUD গ্রিড, কোণে targeting bracket, জ্বলজ্বলে composer আর পেছনে crimson halo।
