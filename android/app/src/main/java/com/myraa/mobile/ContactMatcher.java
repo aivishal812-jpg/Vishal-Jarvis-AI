@@ -74,7 +74,7 @@ public final class ContactMatcher {
         Integer previous = counts.get(phone);
         counts.put(phone, previous == null ? 1 : previous + 1);
       }
-    } catch (SecurityException | RuntimeException denied) {
+    } catch (RuntimeException denied) {
       // Call-log access is optional: without it the address book is still used, just less exact.
       return counts;
     }
