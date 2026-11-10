@@ -46,14 +46,18 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            # A keystore that does not open is worse than a missing one: signing would fail after
+            # the whole build. Check it here, before anything is compiled.
+            keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storepass "$KEYSTORE_PASSWORD" > /dev/null
             echo "ANDROID_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
             echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
             echo "ANDROID_KEY_ALIAS=vishaljarvis" >> "$GITHUB_ENV"
-            echo "Using the repository signing key (updates install over older builds)."
+            echo "ANDROID_KEY_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "Signing with the repository key, so this build installs over the older ones."
           else
-            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret. A temporary key is used, so uninstall the old app before installing this build."
+            echo "::warning::No ANDROID_KEYSTORE_BASE64/ANDROID_KEYSTORE_PASSWORD secret: this APK is signed with a temporary key, so the previous version has to be uninstalled first."
           fi
 
       - name: Bump versionCode for this build
@@ -85,7 +89,10 @@ jobs:
           TAG="v${{ steps.version.outputs.name }}-build${{ github.run_number }}"
           cd artifacts/android
           for apk in *.apk; do mv "$apk" "Vishal-Jarvis-${{ steps.version.outputs.name }}-build${{ github.run_number }}.apk"; done
-          gh release create "$TAG" ./*.apk \
+          sha256sum ./*.apk > SHA256SUMS.txt
+          # One line on purpose: a blank line inside a YAML block scalar ends the scalar.
+          NOTES="Build ${GITHUB_SHA::7}, versionCode ${{ steps.version.outputs.code }}. Install: tap the .apk and allow \"Install unknown apps\" when Android asks. If Android says \"App not installed\", uninstall the older Vishal Jarvis first. If the app closes right after opening, use Settings - Crash report inside the app to see the exact error."
+          gh release create "$TAG" ./*.apk SHA256SUMS.txt \
             --title "Vishal Jarvis ${{ steps.version.outputs.name }} (build ${{ github.run_number }})" \
-            --notes "Automatic APK build from commit ${GITHUB_SHA::7} (versionCode ${{ steps.version.outputs.code }}). Download the .apk below and install it on your Android phone." \
+            --notes "$NOTES" \
             --latest
