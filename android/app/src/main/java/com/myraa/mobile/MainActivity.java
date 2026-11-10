@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
   };
   private static final String LAST_CRASH_SEEN = "crashReportSeenUpTo";
   private static final String SAW_INTERFACE = "interfaceWasDrawn";
+  private static final String PAGE_SERVED = "bundledPageWasServed";
   private int rendererFailures;
   private volatile boolean pageLoaded;
   private volatile boolean scriptsLoaded;
@@ -182,7 +183,19 @@ public class MainActivity extends Activity {
     if (crash.length() <= seen) return;                       // nothing new to report
     if (prefs.getBoolean(SAW_INTERFACE, false)) return;        // it already ran fine once
     prefs.edit().putInt(LAST_CRASH_SEEN, crash.length()).apply();
-    showRecovery(crash);
+    // A crash while the bundled page was still being served would repeat straight away, so that case
+    // gets the plain recovery screen. Anything else is already running fine, so the interface stays
+    // visible and the report arrives as a dialog the user can dismiss or share.
+    if (!prefs.getBoolean(PAGE_SERVED, false)) { showRecovery(crash); return; }
+    web.postDelayed(() -> {
+      try {
+        new AlertDialog.Builder(MainActivity.this)
+          .setTitle("Vishal Jarvis recovered")
+          .setMessage("The last start failed. This one is running.\n\n"
+            + (crash.length() > 900 ? crash.substring(crash.length() - 900) : crash))
+          .setPositiveButton("OK", null).show();
+      } catch (Throwable ignored) { /* a dialog is a courtesy, never a requirement */ }
+    }, 1500);
   }
 
   @Override public void onSaveInstanceState(Bundle out) {
@@ -371,6 +384,7 @@ public class MainActivity extends Activity {
         if (!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getHost())) return blocked();
         String file = uri.getPath();
         if (file == null || !file.startsWith("/assets/") || file.contains("..") || file.contains("\\")) return blocked();
+        if (file.endsWith(".html") && prefs != null) prefs.edit().putBoolean(PAGE_SERVED, true).apply();
         file = file.substring(8);
         try {
           String ext = file.substring(file.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
