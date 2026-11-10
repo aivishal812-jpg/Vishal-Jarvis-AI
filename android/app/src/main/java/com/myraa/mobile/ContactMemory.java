@@ -33,7 +33,7 @@ final class ContactMemory {
   static final class Pick {
     final String spoken;
     final String name;
-    final String phone;
+    String phone;
     final String contactId;
     int uses;
     long lastUsed;
