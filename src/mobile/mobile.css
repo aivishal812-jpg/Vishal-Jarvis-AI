@@ -296,6 +296,9 @@ dialog input:not([type=checkbox]),dialog select{display:block;width:100%;margin-
 }
 #hud{position:absolute;inset:0;pointer-events:none;z-index:1;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 #hud .hud{position:absolute;inset:0}
+/* the ring and the character share the stage: without this wrapper the SVG had no box to
+   centre against, so the whole ring stack collapsed onto the top edge */
+#hud .hud-ring-layer{position:absolute;inset:0}
 .hud-rings{
   position:absolute;left:50%;top:50%;width:min(74%,340px);height:auto;aspect-ratio:1;
   transform:translate(-50%,-54%);filter:drop-shadow(0 0 14px #ff24425c);

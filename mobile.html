@@ -1,1 +1,32 @@
-<!doctype html><html lang="bn-IN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101317"><title>Vishal Jarvis</title></head><body><div id="app"></div><script type="module" src="/src/mobile/main.ts"></script></body></html>
+<!doctype html>
+<html lang="bn-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#070407" />
+    <title>Vishal Jarvis</title>
+    <style>
+      /* Painted before the script bundle parses, so a slow or failed start still shows the brand. */
+      html, body { margin: 0; height: 100%; background: #070407; color: #f6eef0; }
+      #boot {
+        position: fixed; inset: 0; display: grid; place-items: center; gap: 10px;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 10px; letter-spacing: 3px; color: #ff6a7c;
+        background: radial-gradient(120% 90% at 50% 40%, #26060f 0%, #0c0409 58%, #070407 100%);
+      }
+      #app:not(:empty) + #boot { display: none; }
+      #boot b { display: block; text-align: center; font-weight: 500; font-size: 12px; letter-spacing: 5px; color: #ffd9c2; }
+      #boot::after {
+        content: ""; position: absolute; width: 120px; height: 120px; border-radius: 50%;
+        border: 1px solid #ff244233; border-top-color: #ff2442; animation: bootSpin 1.4s linear infinite;
+      }
+      #boot span { position: relative; z-index: 1; margin-top: 150px; }
+      @keyframes bootSpin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot"><b>VISHAL JARVIS</b><span>STARTING CORE</span></div>
+    <script type="module" src="/src/mobile/main.ts"></script>
+  </body>
+</html>

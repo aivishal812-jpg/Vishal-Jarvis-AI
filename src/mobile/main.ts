@@ -89,6 +89,7 @@ function stopVoice() {
 }
 
 const app = document.querySelector('#app')!;
+document.getElementById('boot')?.remove();
 app.innerHTML = `
   <header class="topbar">
     <div class="brand">
@@ -584,7 +585,15 @@ async function loadAvatar() {
     if (fullBody) instance.frameFullBody();
     instance.setEyeTracking(true); if (foreground && !document.hidden) instance.start();
     el('avatar-status').textContent = '';
-  } catch (error) { if (mine === generation) el('avatar-status').textContent = `Character could not load. ${String(error)}`; }
+  } catch (error) {
+    // Losing the 3D context must never take the microphone down with it: the app stays usable and
+    // says so, instead of leaving a blank stage.
+    if (mine === generation) {
+      el('avatar').replaceChildren();
+      el('avatar-status').textContent = 'Graphics are unavailable on this device — voice and every other feature still work.';
+      document.body.dataset.graphics = 'off';
+    }
+  }
 }
 
 /**
@@ -1035,7 +1044,7 @@ const THEME_KEY = 'vishal.jarvis.theme';
 const MOTION_KEY = 'vishal.jarvis.reduceMotion';
 function applyTheme(value: string) {
   const resolved = value === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : value;
-  document.documentElement.dataset.theme = resolved;
+  document.documentElement.setAttribute('data-theme', resolved);
   el<HTMLSelectElement>('theme').value = value;
   localStorage.setItem(THEME_KEY, value);
 }
@@ -1049,7 +1058,7 @@ el<HTMLSelectElement>('text-size').addEventListener('change', () => {
 });
 el<HTMLInputElement>('reduce-motion').addEventListener('change', () => {
   const reduce = el<HTMLInputElement>('reduce-motion').checked;
-  document.documentElement.dataset.motion = reduce ? 'reduced' : 'full';
+  document.documentElement.setAttribute('data-motion', reduce ? 'reduced' : 'full');
   localStorage.setItem(MOTION_KEY, String(reduce));
 });
 
@@ -1083,7 +1092,7 @@ window.MyraaNativeAudio = (payload, speech) => { liveSession?.ingestNativePcm(pa
 applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 const reduceMotion = localStorage.getItem(MOTION_KEY) === 'true';
 el<HTMLInputElement>('reduce-motion').checked = reduceMotion;
-document.documentElement.dataset.motion = reduceMotion ? 'reduced' : 'full';
+document.documentElement.setAttribute('data-motion', reduceMotion ? 'reduced' : 'full');
 setStatus(navigator.onLine ? 'Ready' : 'Offline', !navigator.onLine);
 renderQuickActions(); refreshSettings(); renderHistory();
 if (state.lastFailedTask && !state.pendingTasks) {
@@ -1098,3 +1107,19 @@ void loadAvatar();
 }
 setTimeout(autoVoice, 1200);
 if (!bridge) notice('Browser preview — native chat, voice and device actions run inside the Android app.');
+
+/**
+ * If anything above ever throws during start-up, the screen would stay empty. A global handler
+ * re-renders one readable line instead, so the app never looks like it simply refused to open.
+ */
+function startFailure(error: unknown) {
+  const app = document.querySelector('#app');
+  if (!app || app.children.length) return;
+  app.innerHTML = '<div style="padding:28px;font-family:ui-monospace,monospace;color:#ff8a94;font-size:12px;line-height:1.7">'
+    + '<b style="display:block;color:#ffd9c2;letter-spacing:3px;margin-bottom:10px">VISHAL JARVIS</b>'
+    + 'The interface could not start. Tap here to retry, or reinstall the app.<br><br>'
+    + '<span style="color:#9c8189">' + String(error).slice(0, 200) + '</span></div>';
+  app.querySelector('div')!.addEventListener('click', () => location.reload());
+}
+window.addEventListener('error', event => startFailure(event.error || event.message));
+window.addEventListener('unhandledrejection', event => startFailure(event.reason));
