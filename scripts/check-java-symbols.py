@@ -17,10 +17,16 @@ for name in os.listdir(root):
 
 
 def strip(text):
-    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
-    text = re.sub(r'(?<!\\)//[^\n]*', ' ', text)
+    """Remove comments and literals.
+
+    Strings are removed *before* line comments: a literal such as
+    "https://appassets.androidplatform.net" contains "//", and deleting comments first would cut the
+    literal (and its closing quote) in half, unbalancing every brace that followed it.
+    """
     text = re.sub(r'"(\\.|[^"\\\n])*"', '""', text)
     text = re.sub(r"'(\\.|[^'\\\n])'", "''", text)
+    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
+    text = re.sub(r'(?<!\\)//[^\n]*', ' ', text)
     return text
 
 

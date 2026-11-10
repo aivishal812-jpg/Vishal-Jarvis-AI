@@ -95,6 +95,9 @@ public class MainActivity extends Activity {
     }
   };
   private int rendererFailures;
+  private volatile boolean pageLoaded;
+  private volatile boolean scriptsLoaded;
+  private int watchdogGeneration;
   private String personality;
 
   @Override public void onCreate(Bundle saved) {
@@ -135,6 +138,23 @@ public class MainActivity extends Activity {
     }
     createWebView();
     readLaunchIntent(getIntent());
+    // A page that never finishes loading leaves a blank window with no explanation. If the WebView
+    // has not reported a finished load after 12 seconds, show what is wrong instead of nothing.
+    final int mine = watchdogGeneration = watchdogGeneration + 1;
+    web.postDelayed(() -> {
+      if (mine != watchdogGeneration || pageLoaded) return;
+      if (!scriptsLoaded) showWebViewError(stuckPageMessage());
+    }, 12000);
+  }
+
+  /** Says which of the two things went wrong: the page file never arrived, or its script died. */
+  private String stuckPageMessage() {
+    String crash = CrashLog.read(this);
+    if (!crash.isEmpty()) {
+      String tail = crash.length() > 900 ? crash.substring(crash.length() - 900) : crash;
+      return "Vishal Jarvis hit an error while starting. Tap to retry.\n\n" + tail;
+    }
+    return "Vishal Jarvis could not finish loading. Tap to retry, or update Android System WebView.";
   }
 
   @Override protected void onNewIntent(Intent intent) {
@@ -231,7 +251,7 @@ public class MainActivity extends Activity {
       @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         android.util.Log.e("MyraaWeb", "Resource error " + error.getErrorCode() + ": " + request.getUrl().getPath());
       }
-      @Override public void onPageFinished(WebView view, String url) { android.util.Log.i("MyraaWeb", "Bundled page ready"); }
+      @Override public void onPageFinished(WebView view, String url) { pageLoaded = true; android.util.Log.i("MyraaWeb", "Bundled page ready"); }
       @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
         if (!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getHost())) return blocked();
@@ -361,12 +381,41 @@ public class MainActivity extends Activity {
     }
   }
 
+  /**
+   * Every call the page makes passes through here. A blocked runtime permission (contacts, call log,
+   * notifications on Android 13+, exact alarms) throws SecurityException from deep inside a helper,
+   * and an exception crossing the JS bridge kills the whole process - the phone shows "keeps
+   * stopping" and the window closes before it ever draws. Guarded entry points turn that into a
+   * normal, readable refusal instead.
+   */
+  private void guard(Runnable body) {
+    try { body.run(); }
+    catch (Throwable failure) {
+      try { CrashLog.record(MainActivity.this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
+      String why = failure instanceof SecurityException
+        ? "Android blocked that because a permission is missing. Open Settings - Permissions, allow it, then try again."
+        : "That did not work on this phone: " + failure.getClass().getSimpleName();
+      try { emit(json("type", "error", "service", "bridge", "message", why)); } catch (Throwable ignored) { /* the page may be gone */ }
+    }
+  }
+
   public final class NativeBridge {
-    @JavascriptInterface public String getState() { return state().toString(); }
-    @JavascriptInterface public void configure(String raw) {
+    /** The bundle calls this once it has drawn the shell; a silent script failure stays visible. */
+    @JavascriptInterface public void pageReady() { scriptsLoaded = true; pageLoaded = true; android.util.Log.i("MyraaWeb", "Interface drawn"); }
+    @JavascriptInterface public String getState() {
+      // The page reads this before it draws anything, so it must always answer.
+      try { return state().toString(); } catch (Throwable failure) {
+        try { CrashLog.record(MainActivity.this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
+        return json("history", new JSONArray(), "keyConfigured", false, "model", "gemini-3.5-flash",
+          "quality", "balanced", "language", "bn-IN", "version", BuildInfo.VERSION).toString();
+      }
+    }
+    @JavascriptInterface public void configure(String raw) { guard(() -> configureWork(raw)); }
+    private void configureWork(String raw) {
       configureSettings(raw, false);
     }
-    @JavascriptInterface public void checkConnection(String raw) {
+    @JavascriptInterface public void checkConnection(String raw) { guard(() -> checkConnectionWork(raw)); }
+    private void checkConnectionWork(String raw) {
       configureSettings(raw, true);
     }
     private void configureSettings(String raw, boolean checkOnly) {
@@ -421,8 +470,9 @@ public class MainActivity extends Activity {
         });
       } catch (Exception e) { emit(json("type", "settings", "status", "error", "code", "SETTINGS_INVALID", "message", "Check the model identifier, graphics, language and key fields. Previous settings were kept.")); }
     }
-    @JavascriptInterface public void chat(String text, String id) { startChat(text, id); }
-    @JavascriptInterface public void cancel() {
+    @JavascriptInterface public void chat(String text, String id) { guard(() -> startChat(text, id)); }
+    @JavascriptInterface public void cancel() { guard(() -> cancelWork()); }
+    private void cancelWork() {
       generation.incrementAndGet();
       HttpsURLConnection connection = activeConnection; if (connection != null) connection.disconnect();
       cancelActionWaiters();
@@ -433,7 +483,8 @@ public class MainActivity extends Activity {
       AiTaskCoordinator.endForeground(current);
       stopService(new Intent(MainActivity.this, AiTaskForegroundService.class));
     }
-    @JavascriptInterface public void startLive(String id) {
+    @JavascriptInterface public void startLive(String id) { guard(() -> startLiveWork(id)); }
+    private void startLiveWork(String id) {
       if (id == null || !id.matches("[A-Za-z0-9-]{1,80}")) return;
       runOnUiThread(() -> {
         cancelLive();
@@ -445,7 +496,8 @@ public class MainActivity extends Activity {
         if(!needed.isEmpty()){pendingLiveId=id;requestPermissions(needed.toArray(new String[0]),MICROPHONE_REQUEST);}else provisionLive(id, false);
       });
     }
-    @JavascriptInterface public void mobileAction(String id,String name,String args) {
+    @JavascriptInterface public void mobileAction(String id,String name,String args) { guard(() -> mobileActionWork(id, name, args)); }
+    private void mobileActionWork(String id,String name,String args) {
       if(args==null||args.length()>10000)return;
       runOnUiThread(()->{
         if(!foreground&&!LiveVoiceService.overlayVisible){emit(json("type","mobile-action-result","id",id,"result",json("status","permission_required","message","Bring Vishal Jarvis back to the front, or allow Floating controls in Settings → Permissions, so it can switch apps for you.")));return;}
@@ -459,10 +511,11 @@ public class MainActivity extends Activity {
         mobileActions.execute(id,name,args);
       });
     }
-    @JavascriptInterface public void cancelMobileAction(String id){if(id!=null)runOnUiThread(()->mobileActions.cancel(id));}
-    @JavascriptInterface public void openFloatingSettings(){runOnUiThread(()->startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))));}
-    @JavascriptInterface public void endLive() { runOnUiThread(() -> cancelLive()); }
-    @JavascriptInterface public void renewLive(String id) {
+    @JavascriptInterface public void cancelMobileAction(String id) { guard(() -> { if (id != null) runOnUiThread(() -> mobileActions.cancel(id)); }); }
+    @JavascriptInterface public void openFloatingSettings() { guard(() -> runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))))); }
+    @JavascriptInterface public void endLive() { guard(() -> runOnUiThread(() -> cancelLive())); }
+    @JavascriptInterface public void renewLive(String id) { guard(() -> renewLiveWork(id)); }
+    private void renewLiveWork(String id) {
       if (id == null || !id.matches("[A-Za-z0-9-]{1,80}")) return;
       runOnUiThread(() -> {
         if (currentLiveId == null) return;
@@ -483,12 +536,16 @@ public class MainActivity extends Activity {
         return json("ok", false, "message", "Native microphone capture could not start.").toString();
       }
     }
-    @JavascriptInterface public void stopNativeCapture() { if (audioCapture != null) audioCapture.stop(); }
-    @JavascriptInterface public String audioDiagnostics() { return audioCapture == null ? "{}" : audioCapture.diagnostics().toString(); }
-    @JavascriptInterface public void speak(String text) { speakText(text); }
-    @JavascriptInterface public void stopSpeaking() { runOnUiThread(() -> stopSpeaking()); }
-    @JavascriptInterface public void stopSpeech() { if (tts != null) tts.stop(); AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }
-    @JavascriptInterface public void clearKey() {
+    @JavascriptInterface public void stopNativeCapture() { guard(() -> { if (audioCapture != null) audioCapture.stop(); }); }
+    @JavascriptInterface public String audioDiagnostics() {
+      try { return audioCapture == null ? "{}" : audioCapture.diagnostics().toString(); }
+      catch (Throwable failure) { return json("ok", false, "message", "The microphone reports no diagnostics right now.").toString(); }
+    }
+    @JavascriptInterface public void speak(String text) { guard(() -> speakText(text)); }
+    @JavascriptInterface public void stopSpeaking() { guard(() -> runOnUiThread(MainActivity.this::stopSpeaking)); }
+    @JavascriptInterface public void stopSpeech() { guard(() -> { if (tts != null) tts.stop(); AiTaskEvents.speaking = false; emit(json("type", "speech", "active", false)); }); }
+    @JavascriptInterface public void clearKey() { guard(() -> clearKeyWork()); }
+    private void clearKeyWork() {
       cancel(); AiTaskCoordinator.cancelAll(MainActivity.this);
       synchronized (settingsLock) {
         settingsGeneration.incrementAndGet();
@@ -497,23 +554,30 @@ public class MainActivity extends Activity {
       }
       emit(json("type", "settings", "status", "cleared", "state", state(), "message", "Saved API key removed."));
     }
-    @JavascriptInterface public void clearHistory() { cancel(); AiTaskCoordinator.cancelAll(MainActivity.this); AiTaskStore.get(MainActivity.this).clearHistory(); }
-    @JavascriptInterface public void openSettings() { runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())))); }
+    @JavascriptInterface public void clearHistory() { guard(() -> { cancelWork(); AiTaskCoordinator.cancelAll(MainActivity.this); AiTaskStore.get(MainActivity.this).clearHistory(); }); }
+    @JavascriptInterface public void openSettings() { guard(() -> runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))))); }
     @JavascriptInterface public String rememberFact(String text) {
-      boolean saved = addFact(text);
-      String message = saved ? "Saved to memory." : "That fact was not saved. Keep it under 240 characters and never store passwords, OTPs or keys.";
-      emit(json("type", "memory", "status", saved ? "saved" : "rejected", "state", state(), "message", message));
-      return json("status", saved ? "saved" : "rejected", "message", message).toString();
+      try {
+        boolean saved = addFact(text);
+        String message = saved ? "Saved to memory." : "That fact was not saved. Keep it under 240 characters and never store passwords, OTPs or keys.";
+        emit(json("type", "memory", "status", saved ? "saved" : "rejected", "state", state(), "message", message));
+        return json("status", saved ? "saved" : "rejected", "message", message).toString();
+      } catch (Throwable failure) {
+        return json("status", "rejected", "message", "That fact could not be stored on this phone.").toString();
+      }
     }
-    @JavascriptInterface public void deleteFact(String id) {
+    @JavascriptInterface public void deleteFact(String id) { guard(() -> deleteFactWork(id)); }
+    private void deleteFactWork(String id) {
       boolean removed = removeFact(id);
       emit(json("type", "memory", "status", removed ? "deleted" : "unchanged", "state", state(), "message", removed ? "Memory updated." : "That memory entry was already gone."));
     }
-    @JavascriptInterface public void clearMemory() {
+    @JavascriptInterface public void clearMemory() { guard(() -> clearMemoryWork()); }
+    private void clearMemoryWork() {
       MemoryStore.clear(MainActivity.this);
       emit(json("type", "memory", "status", "cleared", "state", state(), "message", "All remembered facts were deleted."));
     }
-    @JavascriptInterface public void copyText(String text) {
+    @JavascriptInterface public void copyText(String text) { guard(() -> copyTextWork(text)); }
+    private void copyTextWork(String text) {
       String body = text == null ? "" : text;
       if (body.isEmpty() || body.length() > 20000) return;
       runOnUiThread(() -> {
@@ -526,18 +590,21 @@ public class MainActivity extends Activity {
         }
       });
     }
-    @JavascriptInterface public void shareText(String text) {
+    @JavascriptInterface public void shareText(String text) { guard(() -> shareTextWork(text)); }
+    private void shareTextWork(String text) {
       String body = text == null ? "" : text;
       if (body.isEmpty() || body.length() > 4000) return;
       final String id = "share-" + UUID.randomUUID();
       runOnUiThread(() -> mobileActions.execute(id, "mobile_action", json("action", "share_text", "text", body).toString()));
     }
-    @JavascriptInterface public void setTextScale(int percent) {
+    @JavascriptInterface public void setTextScale(int percent) { guard(() -> setTextScaleWork(percent)); }
+    private void setTextScaleWork(int percent) {
       int size = Math.max(85, Math.min(140, percent));
       prefs.edit().putInt("textScale", size).apply();
       runOnUiThread(() -> { if (web != null) web.getSettings().setTextZoom(size); });
     }
-    @JavascriptInterface public void exportTranscript() {
+    @JavascriptInterface public void exportTranscript() { guard(() -> exportTranscriptWork()); }
+    private void exportTranscriptWork() {
       runOnUiThread(() -> {
         try {
           TranscriptExport.create(MainActivity.this);
@@ -547,7 +614,8 @@ public class MainActivity extends Activity {
         } catch (Exception e) { error("export", e instanceof IllegalStateException ? e.getMessage() : "Could not create the transcript.", null); }
       });
     }
-    @JavascriptInterface public void shareTranscript() {
+    @JavascriptInterface public void shareTranscript() { guard(() -> shareTranscriptWork()); }
+    private void shareTranscriptWork() {
       runOnUiThread(() -> {
         try {
           File shared = TranscriptExport.createShared(MainActivity.this);
@@ -559,7 +627,8 @@ public class MainActivity extends Activity {
         } catch (Exception e) { error("export", e instanceof IllegalStateException ? e.getMessage() : "Could not share the transcript.", null); }
       });
     }
-    @JavascriptInterface public void pickImage() {
+    @JavascriptInterface public void pickImage() { guard(() -> pickImageWork()); }
+    private void pickImageWork() {
       runOnUiThread(() -> new AlertDialog.Builder(MainActivity.this).setTitle("Show Jarvis a photo")
         .setItems(new CharSequence[]{"Take a photo", "Choose from gallery"}, (d, which) -> {
           if (which == 0) {
@@ -568,9 +637,10 @@ public class MainActivity extends Activity {
           } else launchGallery();
         }).setNegativeButton("Cancel", null).show());
     }
-    @JavascriptInterface public void clearImage() { ImageAttachment.clear(); }
+    @JavascriptInterface public void clearImage() { guard(ImageAttachment::clear); }
     /** Reads a PDF or text document into the next request's context. */
-    @JavascriptInterface public void pickDocument() {
+    @JavascriptInterface public void pickDocument() { guard(() -> pickDocumentWork()); }
+    private void pickDocumentWork() {
       runOnUiThread(() -> {
         try {
           Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -579,12 +649,35 @@ public class MainActivity extends Activity {
         } catch (RuntimeException missing) { emit(json("type", "document-attached", "ok", false, "message", "No file app is available on this phone.")); }
       });
     }
-    @JavascriptInterface public void openProSettings() { runOnUiThread(() -> startActivity(new Intent(MainActivity.this, ProSettingsActivity.class))); }
+    @JavascriptInterface public void openProSettings() { guard(() -> runOnUiThread(() -> startActivity(new Intent(MainActivity.this, ProSettingsActivity.class)))); }
     @JavascriptInterface public String takeLaunchAction() {
-      if (!pendingAutoVoice) return "";
-      pendingAutoVoice = false; return "voice";
+      try { if (!pendingAutoVoice) return ""; pendingAutoVoice = false; return "voice"; }
+      catch (Throwable failure) { return ""; }
     }
-    @JavascriptInterface public void requestPermission(String name) {
+    /**
+     * "It closes when I open it" is impossible to diagnose from chat, and the phone cannot be
+     * plugged into a computer. This hands the local crash log to any share target instead.
+     */
+    @JavascriptInterface public void shareCrashLog() {
+      guard(() -> {
+        String crash = CrashLog.read(MainActivity.this);
+        if (crash.isEmpty()) crash = "No crash has been recorded on this phone. Version " + BuildInfo.VERSION
+          + " on Android " + Build.VERSION.RELEASE + " (" + Build.MANUFACTURER + " " + Build.MODEL + ").";
+        String text = "Vishal Jarvis " + BuildInfo.VERSION + " · Android " + Build.VERSION.RELEASE
+          + " · " + Build.MANUFACTURER + " " + Build.MODEL + "\n\n" + crash;
+        runOnUiThread(() -> {
+          try {
+            startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain")
+              .putExtra(Intent.EXTRA_SUBJECT, "Vishal Jarvis " + BuildInfo.VERSION + " report")
+              .putExtra(Intent.EXTRA_TEXT, text), "Share crash report"));
+          } catch (RuntimeException noShareApp) {
+            new AlertDialog.Builder(MainActivity.this).setTitle("Crash report").setMessage(text).setPositiveButton("Close", null).show();
+          }
+        });
+      });
+    }
+    @JavascriptInterface public void requestPermission(String name) { guard(() -> requestPermissionWork(name)); }
+    private void requestPermissionWork(String name) {
       runOnUiThread(() -> {
         if (name == null) return;
         ArrayList<String> needed = new ArrayList<>();

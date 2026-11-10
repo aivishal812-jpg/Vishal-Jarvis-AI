@@ -25,7 +25,7 @@ interface Bridge {
   deleteFact(id: string): void; clearMemory(): void; copyText(text: string): void; shareText(text: string): void;
   requestPermission(name: string): void; setTextScale(percent: number): void; exportTranscript(): void; shareTranscript(): void;
   pickImage?(): void; clearImage?(): void; openProSettings?(): void; takeLaunchAction?(): string;
-  pickDocument?(): void; stopSpeaking?(): void;
+  pickDocument?(): void; stopSpeaking?(): void; pageReady?(): void; shareCrashLog?(): void;
 }
 declare global {
   interface Window {
@@ -220,6 +220,7 @@ app.innerHTML = `
       <label class="check"><input id="reduce-motion" type="checkbox"> Reduce motion and animation</label>
       <p class="muted" id="diagnostics"></p>
       <p class="muted" id="about"></p>
+      <div class="button-row"><button id="crash-report">Crash report (share)</button></div>
     </details>
   </dialog>
 
@@ -1039,6 +1040,12 @@ for (const id of ['memory-input', 'memory-input-2']) {
   });
 }
 el('memory-clear').onclick = () => { if (confirm('Forget every remembered fact?')) bridge?.clearMemory(); };
+// "The app closes right after opening" must be diagnosable without a computer: the phone already
+// keeps a local crash log, and this button hands it to any share target (WhatsApp, mail, Notes).
+el('crash-report').onclick = () => {
+  if (!bridge?.shareCrashLog) { notice('Crash reports are available inside the Android app.'); return; }
+  bridge.shareCrashLog();
+};
 
 const THEME_KEY = 'vishal.jarvis.theme';
 const MOTION_KEY = 'vishal.jarvis.reduceMotion';
@@ -1123,3 +1130,6 @@ function startFailure(error: unknown) {
 }
 window.addEventListener('error', event => startFailure(event.error || event.message));
 window.addEventListener('unhandledrejection', event => startFailure(event.reason));
+// Tell Android the interface is really on screen, so its start-up watchdog never reports a false alarm.
+try { bridge?.pageReady?.(); } catch { /* the bridge is optional in a browser */ }
+document.body.setAttribute('data-ready', 'true');
