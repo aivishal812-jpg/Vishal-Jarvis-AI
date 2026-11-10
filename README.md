@@ -9,6 +9,17 @@
 3. অথবা **Releases** অংশ থেকে সরাসরি `.apk` নামিয়ে নিন।
 4. ফোনে "Unknown apps install" অনুমতি দিয়ে ইনস্টল করুন। আগের অন্য-কী-তে সাইন করা ভার্সন থাকলে প্রথমবার আনইনস্টল করে নিতে হবে।
 
+## যদি অ্যাপ খুলতে না চায় (crash)
+
+১৮০+ ব্লক build-এর পরও কোনো ফোনে "keeps stopping" এলে এটা এখন **নির্দিষ্টভাবে ধরা যায়**:
+
+1. **থামার কারণ লেখা হয় স্ক্রিনে** — Android-এর WebView/page ১২ সেকেন্ডে শেষ না হলে অ্যাপ খালি থাকার বদলে আসল error দেখায় (tap = retry)।
+2. **JS bridge guarded** — contacts/call-log/notification-এর মতো permission ব্লক থাকলে আগে exception bridge পেরিয়ে পুরো process মেরে ফেলত; এখন সেটা normal message হয়, অ্যাপ বন্ধ হয় না।
+3. **pre-paint splash** — bundle পার্স হওয়ার আগেই crimson "STARTING CORE" স্ক্রিন দেখা যায়, তাই কালো স্ক্রিন আর নেই।
+4. **WebGL না থাকলেও চলে** — 3D fail করলে চরিত্রের জায়গায় এক লাইন লেখা আসে, mic আর বাকি সব কাজ করে।
+5. **Crash report শেয়ার** — Settings → Crash report: ফোনের লোকাল crash log সোজা WhatsApp/মেইলে পাঠানো যায়। ফোনটা কম্পিউটারে লাগাতে হয় না।
+6. **CI**: signing key build-এর আগেই যাচাই হয়, প্রতিটি release-এ `SHA256SUMS.txt` থাকে।
+
 ## Stark-workshop HUD — এখন পুরো স্ক্রিন জুড়ে
 
 পুরো ডিসপ্লে এখন একটা HUD: চার কোণে স্পেসিং bracket, দুই পাশে tick rail, উপরে **telemetry strip** (clock · date · link · mode · state · batt · load · turns · facts · uptime), আর স্ক্রিনের চার কোণে ছয়টা লাইভ কার্ড — **SIGNAL ANALYSER**, **VOICE LINK** (মাইকের আসল লেভেল), **MEMORY INDEX**, **NETWORK TRAFFIC**, **REQUEST FLOW**, গেজ কার্ড। বড় স্ক্রিনে দুই পাশে বাড়তি দুটো কার্ড আসে, ছোট স্ক্রিনে নিচের কার্ডগুলো লুকিয়ে যায় যাতে লেখা ঢাকা না পড়ে।
