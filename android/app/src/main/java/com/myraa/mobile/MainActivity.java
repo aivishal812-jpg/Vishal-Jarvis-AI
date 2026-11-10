@@ -151,22 +151,21 @@ public class MainActivity extends Activity {
         if (mine != watchdogGeneration || pageLoaded) return;
         if (!scriptsLoaded) showWebViewError(stuckPageMessage());
       }, 12000);
-    }
-
-    /** Says which of the two things went wrong: the page file never arrived, or its script died. */
-    private String stuckPageMessage() {
-      String crash = CrashLog.read(this);
-      if (!crash.isEmpty()) {
-        String tail = crash.length() > 900 ? crash.substring(crash.length() - 900) : crash;
-        return "Vishal Jarvis hit an error while starting. Tap to retry.\n\n" + tail;
-      }
-      return "Vishal Jarvis could not finish loading. Tap to retry, or update Android System WebView.";
-  
     } catch (Throwable failure) {
       try { CrashLog.record(this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
       showStartupCrash(failure);
     }
     try { showRecoveryIfLastLaunchDied(); } catch (Throwable ignored) { /* the interface is already up */ }
+  }
+
+  /** Says which of the two things went wrong: the page file never arrived, or its script died. */
+  private String stuckPageMessage() {
+    String crash = CrashLog.read(this);
+    if (!crash.isEmpty()) {
+      String tail = crash.length() > 900 ? crash.substring(crash.length() - 900) : crash;
+      return "Vishal Jarvis hit an error while starting. Tap to retry.\n\n" + tail;
+    }
+    return "Vishal Jarvis could not finish loading. Tap to retry, or update Android System WebView.";
   }
 
   /**
