@@ -387,10 +387,13 @@ public final class VoiceCommandActivity extends Activity {
   }
 
   /** True only for a real sentence that is not simply Jarvis's own voice coming back. */
-  static boolean interrupts(String heard) {
+  private boolean interrupts(String heard) {
     String shown = answer == null ? "" : answer.getText().toString();
     return BargeIn.interrupts(heard, shown);
   }
+
+  /** Test seam: the same rule with no window around it. */
+  static boolean wouldInterrupt(String heard) { return BargeIn.interrupts(heard, ""); }
 
   private void restartBargeIn() {
     if (closed || working || interrupted) return;
