@@ -18,6 +18,8 @@ public final class ContactMatcher {
   private final SharedPreferences prefs;
   private List<NameMatcher.Person> cached;
   private long cachedAt;
+  private Map<String, Integer> usageCache;
+  private long usageAt;
 
   public ContactMatcher(Activity activity, ContactAliasStore aliases) {
     this(activity, aliases, null);
@@ -31,11 +33,52 @@ public final class ContactMatcher {
   }
 
   /**
-   * Decides who the user meant. The learned picks are consulted first, so saying "baba" after
-   * calling father once never brings up a list of every contact starting with "ba".
+   * Decides who the user meant, without ever asking.
+   *
+   * Order: a name the user already settled → the phone's own call/message history (father is
+   * called every week, "Baban" never) → exact name → any other match. The history is what makes
+   * "baba" resolve to the right person on the very first try, with no list and no question.
    */
   public NameMatcher.Decision match(String spoken) {
-    return NameMatcher.resolve(spoken, people(), memory, aliases.snapshot());
+    return NameMatcher.resolve(spoken, people(), memory, aliases.snapshot(), usage());
+  }
+
+  ContactMemory.Pick learned(String spoken) {
+    return memory.lookup(spoken);
+  }
+
+  /** How often each number appears in the call log; empty when the user has not allowed it. */
+  Map<String, Integer> usage() {
+    long now = System.currentTimeMillis();
+    if (usageCache != null && now - usageAt < 60000) return usageCache;
+    usageCache = loadUsage();
+    usageAt = now;
+    return usageCache;
+  }
+
+  private Map<String, Integer> loadUsage() {
+    Map<String, Integer> counts = new HashMap<>();
+    if (activity.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+      return counts;
+    }
+    String[] projection = new String[]{android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.DATE};
+    long since = System.currentTimeMillis() - 120L * 24 * 60 * 60 * 1000;   // last four months
+    try (Cursor c = activity.getContentResolver().query(android.provider.CallLog.Calls.CONTENT_URI, projection,
+        android.provider.CallLog.Calls.DATE + ">?", new String[]{String.valueOf(since)},
+        android.provider.CallLog.Calls.DATE + " DESC")) {
+      if (c == null) return counts;
+      int rows = 0;
+      while (c.moveToNext() && rows++ < 800) {
+        String phone = international(c.getString(0));
+        if (phone == null) continue;
+        Integer previous = counts.get(phone);
+        counts.put(phone, previous == null ? 1 : previous + 1);
+      }
+    } catch (SecurityException | RuntimeException denied) {
+      // Call-log access is optional: without it the address book is still used, just less exact.
+      return counts;
+    }
+    return counts;
   }
 
   /** Remembers the person the user actually used, for this spoken word. */
@@ -58,7 +101,7 @@ public final class ContactMatcher {
   }
 
   /** Drops the 30-second cache after the user edits the address book or a learned pick. */
-  public void invalidate() { cached = null; cachedAt = 0; }
+  public void invalidate() { cached = null; cachedAt = 0; usageCache = null; usageAt = 0; }
 
   ContactMemory memory() { return memory; }
 

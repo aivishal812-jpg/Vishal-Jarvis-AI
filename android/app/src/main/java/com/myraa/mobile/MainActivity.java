@@ -993,7 +993,7 @@ public class MainActivity extends Activity {
       else emit(json("type", "image-attached", "ok", false, "message", "Camera permission was denied. You can still choose a photo from the gallery."));
       return;
     }
-    if(request==MobileActions.CONTACTS_REQUEST){mobileActions.permissionResult();return;}
+    if(request==MobileActions.CONTACTS_REQUEST||request==MobileActions.CALL_LOG_REQUEST){mobileActions.permissionResult();return;}
     if(request==MobileActions.PHONE_REQUEST){mobileActions.phonePermissionResult();emit(json("type","permissions","state",state()));return;}
     if(request==MobileActions.TORCH_REQUEST){mobileActions.torchPermissionResult();return;}
     if (request != MICROPHONE_REQUEST || pendingLiveId == null) return;

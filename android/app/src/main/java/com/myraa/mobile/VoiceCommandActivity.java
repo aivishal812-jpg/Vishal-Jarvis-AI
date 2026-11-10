@@ -329,7 +329,7 @@ public final class VoiceCommandActivity extends Activity {
 
   @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(request, permissions, results);
-    if (request == MobileActions.CONTACTS_REQUEST) actions.permissionResult();
+    if (request == MobileActions.CONTACTS_REQUEST || request == MobileActions.CALL_LOG_REQUEST) actions.permissionResult();
     else if (request == MobileActions.PHONE_REQUEST) actions.phonePermissionResult();
     else if (request == MobileActions.TORCH_REQUEST) actions.torchPermissionResult();
     else if (request == ProActions.CALENDAR_WRITE_REQUEST || request == ProActions.CALENDAR_REQUEST) actions.calendarPermissionResult();

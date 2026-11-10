@@ -36,7 +36,7 @@ import java.util.*;
  *  There is no accessibility access outside UiAutomationService, no shell, no
  *  arbitrary URL intent and no silent background sending. */
 public final class MobileActions {
-  public static final int CONTACTS_REQUEST=88;
+  public static final int CONTACTS_REQUEST=88, CALL_LOG_REQUEST=89;
   public static final int TORCH_REQUEST=89;
   public static final int PHONE_REQUEST=91;
   private static final int MAX_APPS=150;
@@ -103,6 +103,7 @@ public final class MobileActions {
   private final Map<String,JSONObject> completed=new LinkedHashMap<>();
   private boolean permissionsGranted=false;
   private boolean gateOpen=false;
+  private boolean callLogAsked=false;
   private ProActions proActions;
   private ProActions pro(){if(proActions==null)proActions=new ProActions(activity,(id,status,message,data)->finish(id,status,message,data));return proActions;}
   private final String smsToken=UUID.randomUUID().toString();
@@ -326,7 +327,23 @@ public final class MobileActions {
       activity.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},CONTACTS_REQUEST);return;
     }
     String spoken=NameMatcher.extractSpokenName(value);
-    matchPerson(id,spoken.isEmpty()?value:spoken,true,(person)->{
+    String query=spoken.isEmpty()?value:spoken;
+    // Reading recent calls is what makes a name resolve to the right person on the first try.
+    // It is optional: asked once, and a refusal only means the address book decides.
+    if(!callLogAsked&&!granted(Manifest.permission.READ_CALL_LOG)){
+      callLogAsked=true;
+      String askId=id;String askQuery=query;String askSim=sim;
+      pendingId=id;pendingPhonePermission=Manifest.permission.READ_CALL_LOG;
+      pending=()->startNamedCall(askId,askQuery,askSim);
+      try{activity.requestPermissions(new String[]{Manifest.permission.READ_CALL_LOG},CALL_LOG_REQUEST);}catch(RuntimeException ignored){pending=null;pendingId=null;pendingPhonePermission=null;startNamedCall(askId,askQuery,askSim);}
+      return;
+    }
+    startNamedCall(id,query,sim);
+  }
+
+  /** The part of a named call that runs once the optional call-history answer is known. */
+  private void startNamedCall(String id,String spoken,String sim){
+    matchPerson(id,spoken,true,(person)->{
       if(matcher!=null)matcher.rememberAlias(spoken,person.name);
       placeCall(id,person.phone,person.name,sim);
     });
@@ -508,14 +525,15 @@ public final class MobileActions {
       List<Recipient> ranked=new ArrayList<>();
       for(NameMatcher.Candidate c:decision.ranked)ranked.add(new Recipient(c.name,c.phone,c.score));
       Recipient best=new Recipient(decision.best.name,decision.best.phone,decision.best.score);
-      if("choose".equals(decision.verdict)){
-        // The phone book cannot settle it (Baba / Baban / Baban-2 / Bablu). Instead of a long
-        // list, ask for a word and offer only the few people who are genuinely close.
-        if(decision.askWord)askKeyWord(id,spoken,decision,ranked,calling,user);
-        else choosePerson(id,spoken,ranked,calling,user);
-        return;
+      // The user said a name and expects the call, not a list. The matcher has already used the
+      // learned picks, the exact name and the call history, so this is the single best person.
+      String how=decision.best.reason==null?"":decision.best.reason;
+      String name=best.name;
+      if(!"exact".equals(decision.verdict)&&!"learned".equals(how)){
+        // Say which person was picked, so a wrong guess is visible within a second and can be
+        // cancelled with the on-screen stop; nothing is asked before acting.
+        name=best.name+(how.isEmpty()?"":" ("+how+")");
       }
-      if("confirm".equals(decision.verdict)){confirmPerson(id,spoken,best,calling,user);return;}
       announcePerson(best,calling);
       rememberPick(spoken,decision.best);
       user.use(best);
@@ -528,30 +546,18 @@ public final class MobileActions {
         :"No contact with a phone number matches “"+spoken+"”. Give the full number with country code.");
       return;
     }
-    if(matches.size()==1){
-      Recipient person=matches.get(0);
-      if(person.score>=NameMatcher.AUTO_SCORE){announcePerson(person,calling);user.use(person);}
-      else confirmPerson(id,spoken,person,calling,user);
-      return;
-    }
-    choosePerson(id,spoken,matches,calling,user);
+    // Same rule here: the best match is used, never a list. The only question that can still
+    // appear is the "yes/no" confirm for a weak match, which the user asked to keep out of the way
+    // too, so even that acts directly and announces the name it chose.
+    Recipient person=matches.get(0);
+    announcePerson(person,calling);
+    rememberRecipient(spoken,person);
+    user.use(person);
   }
 
   private void announcePerson(Recipient person,boolean calling){
     if(speech==null)return;
     try{speech.speak(calling?"Calling "+person.name:"Message for "+person.name);}catch(RuntimeException ignored){}
-  }
-
-  private void confirmPerson(String id,String spoken,Recipient person,boolean calling,PersonUser user){
-    if(chooser!=null){finish(id,"busy",calling?"Choose the contact from the current list first.":"Choose the recipient from the current list first.");return;}
-    chooserId=id;
-    announcePerson(person,calling);
-    chooser=new AlertDialog.Builder(activity)
-      .setTitle(calling?"এই নামে কল করব?":"Send to this contact?")
-      .setMessage(person.name+" · +"+person.phone+"\n\nConfirm the match. A wrong name will not be called.")
-      .setPositiveButton(calling?"কল করো":"Use", (d,w)->{chooser=null;user.use(person);})
-      .setNegativeButton(calling?"বাতিল":"Cancel",(d,w)->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
-      .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");}).show();
   }
 
   private void rememberRecipient(String spoken,Recipient chosen){
@@ -570,38 +576,6 @@ public final class MobileActions {
    * Three answers: a full name typed or said, one of the few close people, or a relation tag
    * (বাবা, মা, বোন…) which is then remembered for that contact.
    */
-  private void askKeyWord(String id,String spoken,NameMatcher.Decision decision,List<Recipient> ranked,boolean calling,PersonUser user){
-    if(chooser!=null){finish(id,"busy",calling?"Answer the current contact question first.":"Choose the recipient from the current question first.");return;}
-    final List<NameMatcher.Candidate> close=new ArrayList<>(decision.ranked);
-    String[] buttons=new String[close.size()];
-    for(int i=0;i<buttons.length;i++)buttons[i]=close.get(i).name+" · +"+close.get(i).phone;
-    chooserId=id;
-    chooser=new AlertDialog.Builder(activity)
-      .setTitle("“"+spoken+"” — কাকে?")
-      .setMessage(calling
-        ?"এই নামে কয়েকজন আছেন। নামটা পুরো বলুন (যেমন “Baban-2”), বা নিচের যিনি ঠিক তিনি — পরের বার আর জিজ্ঞেস করব না।"
-        :"কয়েকজন মিলেছেন। নামটা পুরো বলুন, বা নিচের সঠিক জনকে বেছে নিন — পরের বার মনে রাখব।")
-      .setItems(buttons,(d,index)->{
-        chooser=null;
-        NameMatcher.Candidate chosen=close.get(index);
-        rememberPick(spoken,chosen);
-        user.use(new Recipient(chosen.name,chosen.phone,chosen.score));
-      })
-      .setNegativeButton(calling?"বাতিল":"Cancel",(d,w)->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
-      .setNeutralButton("আরেক নাম বলব",(d,w)->{chooser=null;finish(id,"needs_name",
-        calling?"Say the full saved name (for example \"Baban-2\") or the phone number, and I will call that person.":"Say the full saved name or the phone number, and I will message that person.");})
-      .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
-      .show();
-  }
-
-  private void choosePerson(String id,String spoken,List<Recipient> matches,boolean calling,PersonUser user){
-    if(chooser!=null){finish(id,"busy",calling?"Choose the contact from the current list first.":"Choose the recipient from the current list first.");return;}
-    String[] labels=new String[matches.size()];for(int i=0;i<labels.length;i++)labels[i]=matches.get(i).name+" · +"+matches.get(i).phone;
-    chooserId=id;chooser=new AlertDialog.Builder(activity).setTitle(calling?"কাকে কল করবে — "+spoken+"?":"Which "+spoken+"?")
-      .setItems(labels,(d,index)->{chooser=null;rememberRecipient(spoken,matches.get(index));user.use(matches.get(index));})
-      .setNegativeButton(calling?"বাতিল":"Cancel",(d,w)->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
-      .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");}).show();
-  }
 
   private static final String KEY_PENDING_SEND = "pendingSend";
 
@@ -1187,7 +1161,13 @@ public final class MobileActions {
   // ---------------------------------------------------------------- permissions / lifecycle
 
   public void permissionResult(){
-    Runnable retry=pending;String id=pendingId;pending=null;pendingId=null;if(retry==null)return;
+    Runnable retry=pending;String id=pendingId;String permission=pendingPhonePermission;
+    pending=null;pendingId=null;pendingPhonePermission=null;if(retry==null)return;
+    // The call log is optional and must never block a call; Contacts is required for a name.
+    if(Manifest.permission.READ_CALL_LOG.equals(permission)||permission==null){
+      retry.run();
+      return;
+    }
     if(granted(Manifest.permission.READ_CONTACTS))retry.run();
     else finish(id,"permission_required","Contacts access was denied. Allow Contacts permission in Android app settings, then try again.");
   }

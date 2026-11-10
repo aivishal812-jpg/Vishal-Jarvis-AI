@@ -90,18 +90,40 @@ public class ContactMemoryTest {
     assertEquals(1, memory.size());
   }
 
+  @Test public void theUsersExactWordsNeverProduceAListOrAQuestion() {
+    // "baba ke call koro" / "baba ke whatsapp e message koro" must act on exactly one person.
+    String[] requests = { "baba ke call koro", "baba ke whatsapp e message koro", "baba ke message koro",
+      "baba ke phone koro", "baba call" };
+    for (String request : requests) {
+      NameMatcher.Decision decision = NameMatcher.resolve(request, phoneBook(), new ContactMemory(),
+        new HashMap<String, String>(), new HashMap<String, Integer>());
+      assertNotNull(request, decision.best);
+      assertFalse(request + " must not ask", "choose".equals(decision.verdict));
+      assertEquals(request + " must name one person only", 1, decision.ranked.size());
+      assertEquals("Baba", decision.best.name);
+    }
+  }
+
+  @Test public void callHistoryBreaksTheTieTheWayAPersonWould() {
+    List<NameMatcher.Person> people = Arrays.asList(
+      new NameMatcher.Person("Baban", "919000000002", "2", new ArrayList<String>()),
+      new NameMatcher.Person("Baba", "919000000001", "1", new ArrayList<String>()));
+    Map<String, Integer> usage = new HashMap<>();
+    usage.put("919000000001", 14);          // father is called often
+    usage.put("919000000002", 1);           // Baban once, long ago
+    NameMatcher.Decision decision = NameMatcher.resolve("baba", people, new ContactMemory(), null, usage);
+    assertEquals("Baba", decision.best.name);
+    assertEquals(1, decision.ranked.size());
+  }
+
   @Test public void twoEquallyGoodDifferentPeopleAskForAWordInsteadOfAList() {
     List<NameMatcher.Person> people = Arrays.asList(
       new NameMatcher.Person("Rahul Das", "919000000021", "21", new ArrayList<String>()),
       new NameMatcher.Person("Rahul Roy", "919000000022", "22", new ArrayList<String>()));
     NameMatcher.Decision decision = NameMatcher.resolve("rahul ke call koro", people, new ContactMemory(), new HashMap<String, String>());
-    if ("choose".equals(decision.verdict)) {
-      assertTrue("the question must offer a word, not a list", decision.askWord);
-      assertTrue(decision.ranked.size() <= 3);
-    } else {
-      // A clear winner is also fine, but it must be one of the two Rahuls.
-      assertTrue(decision.best.name.startsWith("Rahul"));
-    }
+    assertFalse("never a list, never a question", "choose".equals(decision.verdict));
+    assertEquals(1, decision.ranked.size());
+    assertTrue("the picked person must be one of the two Rahuls", decision.best.name.startsWith("Rahul"));
   }
 
   @Test public void theSamePersonWithTwoNumbersIsNotAQuestion() {

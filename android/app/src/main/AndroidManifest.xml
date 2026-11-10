@@ -29,6 +29,9 @@
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+  <!-- Optional. Only counts how often a number appears in the call log so that "baba" picks the
+       father you call every week instead of every contact starting with "ba". Refused = still works. -->
+  <uses-permission android:name="android.permission.READ_CALL_LOG" />
   <uses-feature android:glEsVersion="0x00030000" android:required="true" />
   <queries>
     <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>

@@ -64,8 +64,8 @@ public final class NameMatcher {
     public final List<Candidate> ranked;
     public final String query;
     /**
-     * True when the address book cannot settle it and the user must say a word instead of picking
-     * from a long list ("Baba" versus "Baban", "Baban-2", "Bablu").
+     * Kept for compatibility: the app no longer asks, so this is always false. A single row still
+     * exists in the transcript for older builds that read it.
      */
     public final boolean askWord;
     public Decision(String verdict, Candidate best, List<Candidate> ranked, String query) {
@@ -126,6 +126,16 @@ public final class NameMatcher {
    */
   public static Decision resolve(String spoken, List<Person> people, ContactMemory memory,
                                  Map<String, String> aliases) {
+    return resolve(spoken, people, memory, aliases, Collections.<String, Integer>emptyMap());
+  }
+
+  /**
+   * @param usage how many times each number was called or messaged lately, from the call log. It
+   *              breaks a tie the way a person would: the father you call weekly wins over a
+   *              "Baban" that was never called.
+   */
+  public static Decision resolve(String spoken, List<Person> people, ContactMemory memory,
+                                 Map<String, String> aliases, Map<String, Integer> usage) {
     String query = extractSpokenName(spoken);
     List<Candidate> ranked = new ArrayList<>();
     if (query.isEmpty() || people == null || people.isEmpty()) {
@@ -178,7 +188,13 @@ public final class NameMatcher {
         ranked.add(new Candidate(person.name, person.phone, clamp(best.value), best.reason, best.level, person.contactId));
       }
     }
-    return decide(query, ranked);
+    return decide(query, ranked, usage);
+  }
+
+  private static int count(Map<String, Integer> usage, String phone) {
+    if (usage == null || phone == null || phone.isEmpty()) return 0;
+    Integer value = usage.get(phone);
+    return value == null ? 0 : value;
   }
 
   private static Person find(List<Person> people, String contactId, String phone, String name) {
@@ -193,8 +209,18 @@ public final class NameMatcher {
     return null;
   }
 
-  /** Ranks, then answers one of: this person, confirm this person, ask which word, or none. */
   static Decision decide(String query, List<Candidate> ranked) {
+    return decide(query, ranked, Collections.<String, Integer>emptyMap());
+  }
+
+  /**
+   * Ranks and decides without asking the user anything.
+   *
+   * There is no "choose" verdict any more: the user said a name and expects a call, not a list.
+   * The order is: an exact name, a learned pick, then the best ranked match with the most use in
+   * the phone's own history. "none" still exists, because inventing a person would be worse.
+   */
+  static Decision decide(String query, List<Candidate> ranked, Map<String, Integer> usage) {
     if (ranked.isEmpty()) return new Decision("none", null, ranked, query);
     Collections.sort(ranked, new Comparator<Candidate>() {
       public int compare(Candidate a, Candidate b) {
@@ -215,21 +241,21 @@ public final class NameMatcher {
       return new Decision(verdict, first, Collections.singletonList(first), query);
     }
 
-    double gap = first.score - second.score;
-    // A clear winner by name exactly, or a learned/variant pick with a real margin.
-    if (first.level <= 2 && gap >= AUTO_GAP) {
-      return new Decision(first.level <= 1 ? "exact" : "confident", first, Collections.singletonList(first), query);
-    }
-    // Two different people look equally likely: ask for a word instead of showing the phone book.
-    if (first.level >= 2 && second.level >= 2 && gap < AUTO_GAP) {
-      List<Candidate> close = new ArrayList<>();
+    // The phone's own history wins a tie: this is who the user actually talks to.
+    if (usage != null && !usage.isEmpty()) {
+      int firstUse = count(usage, first.phone);
+      Candidate used = first;
+      int bestUse = firstUse;
       for (Candidate candidate : ranked) {
-        if (candidate.score >= CONFIRM_SCORE && first.score - candidate.score <= AUTO_GAP) close.add(candidate);
-        if (close.size() >= 3) break;
+        if (candidate.level > first.level + 1) continue;      // never let history pick a bad match
+        int times = count(usage, candidate.phone);
+        if (times > bestUse) { bestUse = times; used = candidate; }
       }
-      return new Decision("choose", first, close.isEmpty() ? ranked : close, query, true);
+      if (used != first) {
+        return new Decision(used.level <= 1 ? "exact" : "confident", used, Collections.singletonList(used), query);
+      }
     }
-    return new Decision("confirm", first, Collections.singletonList(first), query);
+    return new Decision(first.level <= 1 ? "exact" : "confident", first, Collections.singletonList(first), query);
   }
 
   public static Decision match(String spoken, List<Contact> contacts) {
