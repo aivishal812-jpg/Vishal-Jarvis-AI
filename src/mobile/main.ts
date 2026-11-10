@@ -3,7 +3,7 @@ import { MyraaAudioSession, type LiveState } from '../lib/audio';
 import { MobileLiveTransport } from './LiveTransport';
 import { describeAction, parseMobileAction } from './actions';
 import { RobotCharacter } from './RobotCharacter';
-import { HudStage, hudMarkup } from './hud';
+import { HudStage, frameMarkup, hudMarkup, panelMarkup, tickerMarkup } from './hud';
 import { parseCharacterCommand } from '../../shared/character/commands';
 
 interface MemoryFact { id: string; text: string; at: number }
@@ -104,6 +104,8 @@ app.innerHTML = `
       <button id="settings" class="icon" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
+  <div id="screen-hud">${frameMarkup()}${panelMarkup()}</div>
+  ${tickerMarkup()}
   <div id="offline" class="banner" hidden>You are offline. Chat requests can be saved and will resume when connected.</div>
   <main>
     <section class="portrait" aria-label="Vishal Jarvis 3D robot character">
@@ -132,25 +134,28 @@ app.innerHTML = `
       <div id="notice" class="notice" role="status"></div>
     </section>
   </main>
-  <footer>
-    <div class="composer">
-      <button id="voice" aria-label="Voice conversation" aria-pressed="false" title="Start a live voice call">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>
-        <span>Talk</span>
+  <footer class="dock">
+    <div class="dock-status"><span id="status-line">Ready</span><button id="stop" class="dock-stop">Stop</button></div>
+    <div class="dock-main">
+      <button id="attach" class="dock-aux" aria-label="Attach a photo or document" title="Photo or document">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.4"/></svg>
       </button>
-      <button id="attach" aria-label="Show Jarvis a photo" title="Attach a photo">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-      </button>
-      <div id="attach-preview" class="attach-preview" hidden><img id="attach-thumb" alt="Attached photo"><button id="attach-clear" aria-label="Remove photo">×</button></div>
-      <div id="document-preview" class="document-preview" hidden><span id="document-name">Document</span><button id="document-clear" aria-label="Remove document">×</button><button id="document-ask" aria-label="Ask about the document">Ask</button></div>
-      <textarea id="input" rows="1" maxlength="8000" placeholder="বলুন বা লিখুন — বলুন কী করতে হবে…" aria-label="Message"></textarea>
-      <button id="send" aria-label="Send message" title="Send">↑</button>
+      <div class="mic-wrap">
+        <svg class="mic-ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="mic-track" cx="60" cy="60" r="54"/>
+          <circle id="mic-arc" class="mic-arc" cx="60" cy="60" r="54" stroke-dasharray="339" stroke-dashoffset="339"/>
+        </svg>
+        <button id="voice" class="mic" aria-label="Talk to Vishal Jarvis" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5 10.5v1.5a7 7 0 0 0 14 0v-1.5M12 19v3M8.5 22h7"/></svg>
+        </button>
+      </div>
+      <div class="dock-aux-slot">
+        <div id="attach-preview" class="attach-preview" hidden><img id="attach-thumb" alt="Attached photo"><button id="attach-clear" aria-label="Remove photo">×</button></div>
+      </div>
     </div>
-    <div class="footer-actions">
-      <span id="status-line">Ready</span>
-      <button id="stop">Stop</button>
-      <button id="speak" aria-label="Read the last reply aloud">Read aloud</button>
-    </div>
+    <div class="dock-hint" id="dock-hint">Tap the core and speak · tap again to send</div>
+    <div id="document-preview" class="document-preview" hidden><span id="document-name">Document</span><button id="document-clear" aria-label="Remove document">×</button><button id="document-ask" aria-label="Ask about the document">Ask</button></div>
+    <button id="speak" class="hidden-speak" aria-label="Read the last reply aloud">Read aloud</button>
   </footer>
 
   <dialog id="settings-panel" aria-label="Settings">
@@ -267,6 +272,7 @@ function startHud() {
   if (!stage || hud) return;
   hud = new HudStage(stage, hudSamples);
   hud.setTurns(state.history?.length || 0);
+  hud.setFacts(state.memory?.length || 0);
   hud.start();
 }
 
@@ -336,8 +342,8 @@ function emptyState() {
         <button data-say="Remember that I prefer Bengali replies">Remember a fact</button>
       </div>`;
     card.querySelectorAll<HTMLButtonElement>('[data-say]').forEach(button => button.addEventListener('click', () => {
-      el<HTMLTextAreaElement>('input').value = button.dataset.say!;
-      autosize(); el<HTMLTextAreaElement>('input').focus();
+      composeText(button.dataset.say!);
+      el('voice').focus();
     }));
   }
   el('messages').appendChild(card);
@@ -387,10 +393,31 @@ function renderHistory() {
   }
 }
 
-function autosize() {
-  const input = el<HTMLTextAreaElement>('input');
-  input.style.height = 'auto';
-  input.style.height = `${Math.min(input.scrollHeight, 132)}px`;
+/**
+ * The window has no text box any more: Jarvis is spoken to. These two helpers keep every existing
+ * flow working — a suggestion chip or a transcript action drops its text into a pending slot, and
+ * the next thing you say is combined with it — without a hidden keyboard field that could steal
+ * focus.
+ */
+let pendingComposerText = '';
+function autosize() { /* the composer is voice-only; kept so older call sites stay valid */ }
+function composeText(text: string, submit = false) {
+  const clean = text.trim();
+  if (!clean) return;
+  if (submit) { void send(clean); return; }
+  // There is no text box any more. A suggestion fills the dock prompt, and the core sends it; the
+  // next spoken sentence replaces it, so nothing is ever stuck waiting for a keyboard.
+  pendingComposerText = clean;
+  el('dock-hint').textContent = clean.length > 44 ? `Ask: ${clean.slice(0, 44)}…` : `Ask: ${clean}`;
+  el('voice').setAttribute('data-pending', 'true');
+  notice(`“${clean}” — tap the core to send this, or just speak.`);
+}
+function takeComposed(): string {
+  const value = pendingComposerText;
+  pendingComposerText = '';
+  el('dock-hint').textContent = 'Tap the core and speak · tap again to send';
+  el('voice').removeAttribute('data-pending');
+  return value;
 }
 
 function setStatus(text: string, offline = false) {
@@ -425,7 +452,7 @@ function renderQuickActions() {
     button.textContent = chip.label;
     button.onclick = () => {
       vibe(10);
-      if (chip.fill) { const input = el<HTMLTextAreaElement>('input'); input.value = chip.fill; autosize(); input.focus(); return; }
+      if (chip.fill) { composeText(chip.fill); el('voice').focus(); return; }
       void runMobileAction('mobile_action', chip.action).then(result => {
         append('tool', result?.message || 'Action finished.');
         notice(result?.message || '');
@@ -440,6 +467,7 @@ function renderQuickActions() {
 
 function renderMemory() {
   const facts = state.memory || [];
+  hud?.setFacts(facts.length);
   el('memory-count').textContent = String(facts.length);
   el('memory-badge').hidden = facts.length === 0;
   for (const id of ['memory-list', 'memory-list-2']) {
@@ -559,11 +587,49 @@ async function loadAvatar() {
   } catch (error) { if (mine === generation) el('avatar-status').textContent = `Character could not load. ${String(error)}`; }
 }
 
+/**
+ * The microphone ring is a real level meter: it reads the live session's own analyser, so the arc
+ * grows with the actual voice and falls back to zero when nobody is talking. Nothing here invents
+ * a level - if there is no analyser, the arc simply stays dark.
+ */
+let micMeter: number | undefined;
+function startMicMeter() {
+  if (micMeter != null) return;
+  const data = new Uint8Array(256);
+  const arc = document.getElementById('mic-arc') as unknown as SVGCircleElement | null;
+  const step = () => {
+    const session = liveSession;
+    const analyser = !session ? null
+      : session.getState() === 'speaking' ? session.outputAnalyser
+      : session.inputAnalyser;
+    let level = 0;
+    if (analyser) {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128) / 128);
+      level = Math.min(1, peak * 3.2);
+    }
+    if (arc) arc.style.strokeDashoffset = String(339 - Math.round(level * 339));
+    document.body.dataset.mic = level.toFixed(2);
+    hud?.setLevel(level);
+  };
+  step();
+  micMeter = window.setInterval(step, 90);
+}
+function stopMicMeter() {
+  if (micMeter != null) window.clearInterval(micMeter);
+  micMeter = undefined;
+  const arc = document.getElementById('mic-arc') as unknown as SVGCircleElement | null;
+  if (arc) arc.style.strokeDashoffset = '339';
+  delete document.body.dataset.mic;
+}
+
 function liveState(value: LiveState) {
   const active = value !== 'disconnected';
   if (value === 'listening') notice('Live voice connected. Speak naturally.');
   el('voice').setAttribute('aria-pressed', String(active));
-  el('voice').querySelector('span')!.textContent = active ? 'End' : 'Talk';
+  document.body.dataset.voice = active ? String(value) : 'off';
+  if (active) startMicMeter(); else stopMicMeter();
   el('presence').textContent = value === 'connecting' ? 'Connecting live…' : value === 'speaking' ? 'Speaking with you' : value === 'listening' ? 'Live · listening to you' : 'Here with you';
   hud?.setActivity(value === 'speaking' ? 'speaking' : value === 'listening' ? 'listening' : value === 'connecting' ? 'linking' : 'idle');
   setStatus(value === 'disconnected' ? 'Ready' : value === 'connecting' ? 'Connecting…' : 'Live call in progress', !navigator.onLine);
@@ -596,7 +662,7 @@ function finishStream() {
 function retryLast() {
   const lastUser = [...state.history].reverse().find(turn => turn.role === 'user');
   if (!lastUser) { notice('There is nothing to retry yet.'); return; }
-  el<HTMLTextAreaElement>('input').value = lastUser.text;
+  composeText(lastUser.text);
   send();
 }
 
@@ -707,7 +773,7 @@ window.MyraaEvents = event => {
     notice(event.message);
     if (event.service === 'text' || event.id === requestId) {
       busy = false; finishStream();
-      if (pendingText) el<HTMLTextAreaElement>('input').value = pendingText;
+      if (pendingText) composeText(pendingText);
       el('presence').textContent = 'Here with you'; setStatus('Ready', !navigator.onLine);
       system?.setFrameInput({ activity: 'idle', emotion: 'confused' });
     }
@@ -759,9 +825,9 @@ function stopSpeakingNow() {
   speaking = false;
   bridge?.stopSpeaking?.();
 }
-function send() {
-  const input = el<HTMLTextAreaElement>('input');
-  let text = input.value.trim();
+function send(spoken?: string | Event) {
+  const composed = typeof spoken === 'string' ? spoken.trim() : '';
+  let text = composed || takeComposed();
   if (!text && attachedImage) text = 'What is in this photo? Explain it briefly.';
   if (!text) return;
   if (attachedImage) {
@@ -770,7 +836,7 @@ function send() {
     if (!state.keyConfigured) { notice('Add your Gemini API key in Settings before sending.'); openSettings(); return; }
     vibe();
     requestId = crypto.randomUUID(); busy = true; pendingText = text;
-    input.value = ''; autosize(); append('user', `[Photo] ${text}`); clearAttachment();
+    append('user', `[Photo] ${text}`); clearAttachment();
     notice(''); setStatus('Looking at the photo…');
     el('presence').textContent = 'Looking closely';
     system?.setFrameInput({ activity: 'thinking', emotion: 'thinking' });
@@ -783,16 +849,16 @@ function send() {
   vibe();
   const mobile = parseMobileAction(text);
   if (mobile) {
-    input.value = ''; autosize(); append('user', text);
+    append('user', text);
     void runMobileWithFollowUp(mobile, text);
     return;
   }
   if (liveSession && liveSession.getState() !== 'disconnected') {
-    liveSession.sendText(text); input.value = ''; autosize(); append('user', text); return;
+    liveSession.sendText(text); append('user', text); return;
   }
   const command = parseCharacterCommand(text);
   if (command) {
-    input.value = ''; autosize(); append('user', text);
+    append('user', text);
     if (command.side) { notice('Desktop-side placement is available on Windows.'); return; }
     if (command.action === 'next_character') { notice('Vishal Jarvis includes its built-in robotic companion character.'); return; }
     if (command.action === 'wave' || command.action === 'dance') system?.playBehaviour(command.action);
@@ -813,14 +879,13 @@ function send() {
   if (!bridge) { notice('Native chat runs inside the Android app. This is a browser preview.'); return; }
   if (!state.keyConfigured) { notice('Add your Gemini API key in Settings before sending.'); openSettings(); return; }
   requestId = crypto.randomUUID(); busy = true; pendingText = text;
-  input.value = ''; autosize(); append('user', text);
+  append('user', text);
   notice(''); setStatus('Thinking…');
   el('presence').textContent = 'Thinking with you';
   system?.setFrameInput({ activity: 'thinking', emotion: 'thinking' });
   bridge.chat(text, requestId);
 }
 
-el('send').onclick = send;
 el('attach').onclick = () => {
   if (!bridge?.pickImage) { notice('Photo questions run inside the Android app.'); return; }
   // One button, two kinds of attachment: a picture for the model to look at, or a PDF/text file
@@ -838,12 +903,8 @@ el('attach').onclick = () => {
 };
 el('attach-clear').onclick = () => { bridge?.clearImage?.(); clearAttachment(); notice('Photo removed.'); };
 el('document-clear').onclick = () => { attachedDocument = false; el('document-preview').hidden = true; notice('Document removed from this chat.'); };
-el('document-ask').onclick = () => { el<HTMLTextAreaElement>('input').value = 'এই ডকুমেন্টটা সংক্ষেপে বুঝিয়ে দাও।'; el<HTMLTextAreaElement>('input').focus(); };
+el('document-ask').onclick = () => { composeText('এই ডকুমেন্টটা সংক্ষেপে বুঝিয়ে দাও।', true); };
 el('pro-settings').onclick = () => { if (!bridge?.openProSettings) { notice('Jarvis Pro settings are in the Android app.'); return; } bridge.openProSettings(); };
-el('input').addEventListener('input', autosize);
-el('input').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); }
-});
 el('stop').onclick = () => {
   cancelMobileActions(); stopVoice(); bridge?.cancel(); bridge?.stopSpeech();
   busy = false; requestId = ''; finishStream();
@@ -852,6 +913,7 @@ el('stop').onclick = () => {
   el('presence').textContent = 'Here with you';
 };
 el('voice').onclick = () => {
+  if (pendingComposerText) { void send(); return; }
   if (liveSession && liveSession.getState() !== 'disconnected') { stopVoice(); notice('Live voice ended.'); return; }
   if (!bridge) { notice('Gemini Live voice runs inside the Android app.'); return; }
   if (!state.keyConfigured) { notice('Add a working Gemini key in Settings to start Live voice.'); openSettings(); return; }
@@ -1023,10 +1085,10 @@ const reduceMotion = localStorage.getItem(MOTION_KEY) === 'true';
 el<HTMLInputElement>('reduce-motion').checked = reduceMotion;
 document.documentElement.dataset.motion = reduceMotion ? 'reduced' : 'full';
 setStatus(navigator.onLine ? 'Ready' : 'Offline', !navigator.onLine);
-renderQuickActions(); refreshSettings(); renderHistory(); autosize();
+renderQuickActions(); refreshSettings(); renderHistory();
 if (state.lastFailedTask && !state.pendingTasks) {
   notice(state.lastFailedTask.message || 'A previous background task could not finish.');
-  if (!el<HTMLTextAreaElement>('input').value) { el<HTMLTextAreaElement>('input').value = state.lastFailedTask.text; autosize(); }
+  if (!pendingComposerText) composeText(state.lastFailedTask.text);
 } else if (state.pendingTasks) setStatus(`${state.pendingTasks} saved task${state.pendingTasks === 1 ? '' : 's'} pending`);
 startHud();
 void loadAvatar();

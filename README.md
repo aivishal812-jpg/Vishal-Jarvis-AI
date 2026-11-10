@@ -9,15 +9,18 @@
 3. অথবা **Releases** অংশ থেকে সরাসরি `.apk` নামিয়ে নিন।
 4. ফোনে "Unknown apps install" অনুমতি দিয়ে ইনস্টল করুন। আগের অন্য-কী-তে সাইন করা ভার্সন থাকলে প্রথমবার আনইনস্টল করে নিতে হবে।
 
-## Stark-workshop HUD (crimson)
+## Stark-workshop HUD — এখন পুরো স্ক্রিন জুড়ে
 
-চরিত্রের চারপাশে এখন **Stark Industries ধাঁচের HUD**: gear-tooth রিং, ঘুরতে থাকা arc segment, sweeping beam, মাঝখানে crimson triangle badge — সাথে চারটে ডেটা প্যানেল (SIGNAL ANALYSER waveform, CPU/MEM/BATT/ACT gauge, NETWORK TRAFFIC, REQUEST FLOW), কোণে বড় ঘড়ি ও তারিখ। সব **কোড দিয়ে আঁকা (SVG/canvas)** — কোনো ছবি ডাউনলোড নেই, তাই APK ভারী হয় না।
+পুরো ডিসপ্লে এখন একটা HUD: চার কোণে স্পেসিং bracket, দুই পাশে tick rail, উপরে **telemetry strip** (clock · date · link · mode · state · batt · load · turns · facts · uptime), আর স্ক্রিনের চার কোণে ছয়টা লাইভ কার্ড — **SIGNAL ANALYSER**, **VOICE LINK** (মাইকের আসল লেভেল), **MEMORY INDEX**, **NETWORK TRAFFIC**, **REQUEST FLOW**, গেজ কার্ড। বড় স্ক্রিনে দুই পাশে বাড়তি দুটো কার্ড আসে, ছোট স্ক্রিনে নিচের কার্ডগুলো লুকিয়ে যায় যাতে লেখা ঢাকা না পড়ে।
+নিচের **টেক্সট বক্স তুলে দেওয়া হয়েছে** — এখন শুধু একটা **crimson mic core**: বললে রিংটা আসল ভয়েস লেভেলে জ্বলে ওঠে, speaking হলে pulse করে, tap করলে Live voice ওঠে/বন্ধ হয়। Suggestion চিপে চাপ দিলে লেখাটা core-এর নিচে জমা থাকে, core চাপলেই পাঠায় — কীবোর্ড লাগে না।
+
+চরিত্রের চারপাশে **Stark Industries ধাঁচের HUD**: gear-tooth রিং, ঘুরতে থাকা arc segment, sweeping beam, মাঝখানে crimson triangle badge — সাথে চারটে ডেটা প্যানেল (SIGNAL ANALYSER waveform, CPU/MEM/BATT/ACT gauge, NETWORK TRAFFIC, REQUEST FLOW), কোণে বড় ঘড়ি ও তারিখ। সব **কোড দিয়ে আঁকা (SVG/canvas)** — কোনো ছবি ডাউনলোড নেই, তাই APK ভারী হয় না।
 প্যানেলের সংখ্যা **সত্যি**: ঘড়ি/তারিখ, অ্যাপের মেমরি, ফোনের ব্যাটারি %, online/offline, সেশন সময়, কথোপকথনের turn সংখ্যা। CPU/ACT আসলে অ্যাসিস্ট্যান্টের নিজের ব্যস্ততা — তাই নাম দেওয়া হয়েছে "গেজ", ভুয়া তাপমাত্রা/আবহাওয়া দেখানো হয় না।
 চরিত্রটা এখন রিংয়ের **ভেতরে** দাঁড়ায়, আর HUD-ও react করে: কথা বললে SIGNAL waveform ওঠে, state বদলায়।
 
 ## চেহারা (সর্বশেষ)
 
-পুরো ইন্টারফেস এখন **futuristic crimson** — গভীর কালচে-লাল ব্যাকগ্রাউন্ড, ধীরে ভাসা crimson aurora, HUD গ্রিড, কোণে targeting bracket, জ্বলজ্বলে composer আর পেছনে crimson halo।
+পুরো ইন্টারফেস এখন **futuristic crimson** — গভীর কালচে-লাল ব্যাকগ্রাউন্ড, ধীরে ভাসা crimson aurora, HUD গ্রিড, কোণে targeting bracket, জ্বলজ্বলে mic core আর পেছনে crimson halo।
 চরিত্রটি সম্পূর্ণ নতুন করে বানানো: স্তরে স্তরে armour plate (clearcoat metal), কাঁধের pauldron, হাতে **repulsor**, বুকে **arc reactor + halo glow**, vented visor ও jaw, articulated আঙুল, boot ও joint ring — সাথে **procedural studio environment map** (ধাতু সত্যিই কিছু প্রতিফলিত করে) আর **real bloom**।
 Settings → Graphics: **Maximum** (bloom + reflections + full detail), **Medium** (ডিফল্ট, glow সহ), **Low** (ব্যাটারি বাঁচাতে glow/reflection বন্ধ)।
 
