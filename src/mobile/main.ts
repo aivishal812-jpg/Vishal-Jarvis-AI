@@ -35,7 +35,7 @@ declare global {
 }
 
 const bridge = window.MyraaNative;
-const fallbackState: AppState = { history: [], model: 'gemini-3.5-flash', quality: 'low', language: 'bn-IN', keyConfigured: false, memory: [], permissions: { microphone: false, contacts: false, camera: false, notifications: false, overlay: false, phone: false, sms: false, accessibility: false } };
+const fallbackState: AppState = { history: [], model: 'gemini-3.5-flash', quality: 'balanced', language: 'bn-IN', keyConfigured: false, memory: [], permissions: { microphone: false, contacts: false, camera: false, notifications: false, overlay: false, phone: false, sms: false, accessibility: false } };
 let state: AppState = bridge ? JSON.parse(bridge.getState()) : fallbackState;
 
 let system: RobotCharacter | null = null;
@@ -165,9 +165,9 @@ app.innerHTML = `
         <option value="en-US">English</option>
       </select></label>
       <label>Graphics<select id="quality">
-        <option value="low">Low · save battery</option>
-        <option value="balanced">Medium · balanced</option>
-        <option value="high">High · sharper</option>
+        <option value="low">Low · longest battery, no glow</option>
+        <option value="balanced">Medium · glow, sharp suit</option>
+        <option value="high">Maximum · bloom, reflections, full detail</option>
       </select></label>
       <label class="check"><input id="spoken" type="checkbox" checked> Read replies aloud with the Android voice (on by default)</label>
       <div class="button-row"><button id="save" class="primary">Save settings</button><button id="check-connection">Check key &amp; model</button></div>
@@ -505,7 +505,7 @@ async function loadAvatar() {
   const canvas = document.createElement('canvas'); el('avatar').appendChild(canvas);
   el('avatar-status').textContent = 'Starting Vishal Jarvis…';
   try {
-    const instance = new RobotCharacter(canvas, (state.quality || 'low') as 'low' | 'balanced' | 'high');
+    const instance = new RobotCharacter(canvas, (state.quality || 'balanced') as 'low' | 'balanced' | 'high');
     system = instance;
     const box = el('avatar').getBoundingClientRect();
     instance.resize(box.width, box.height);

@@ -315,7 +315,7 @@ public class MainActivity extends Activity {
       "phone", granted(Manifest.permission.CALL_PHONE),
       "sms", granted(Manifest.permission.SEND_SMS),
       "accessibility", UiAutomationService.available());
-    JSONObject value = json("model", prefs.getString("model", "gemini-3.5-flash"), "quality", prefs.getString("quality", "low"),
+    JSONObject value = json("model", prefs.getString("model", "gemini-3.5-flash"), "quality", prefs.getString("quality", "balanced"),
       "language", prefs.getString("language", "bn-IN"), "spokenReplies", spokenRepliesOn(),
       "keyConfigured", prefs.contains("keyCipher"), "keyVerified", prefs.getLong("keyVerifiedAt", 0) > 0 && prefs.getString("verifiedModel", "").equals(prefs.getString("model", "gemini-3.5-flash")),
       "providerErrorCode", prefs.getString("providerErrorCode", ""), "ttsAvailable", ttsReady, "version", BuildInfo.VERSION,
@@ -376,7 +376,7 @@ public class MainActivity extends Activity {
         if (!model.matches("[A-Za-z0-9._-]{1,100}")) throw new Exception("Enter a valid Gemini model identifier.");
         String liveModel = input.optString("liveModel", prefs.getString("liveModel", "gemini-3.1-flash-live-preview"));
         if (!liveModel.matches("[A-Za-z0-9._-]{1,100}")) throw new Exception("Enter a valid Live voice model identifier.");
-        String quality = input.optString("quality", "low");
+        String quality = input.optString("quality", "balanced");
         if (!Arrays.asList("low", "balanced", "high").contains(quality)) throw new Exception("Invalid graphics preset.");
         String language = input.optString("language", "bn-IN");
         if (!Arrays.asList("bn-IN", "hi-IN", "en-IN", "en-US").contains(language)) throw new Exception("Invalid language.");

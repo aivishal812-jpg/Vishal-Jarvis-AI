@@ -1,0 +1,15 @@
+<!doctype html><html><body style="margin:0;background:#070407">
+<div id="avatar" style="width:390px;height:560px;position:relative"></div>
+<script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+const canvas=document.createElement('canvas');
+document.getElementById('avatar').appendChild(canvas);
+canvas.style.width='100%';canvas.style.height='100%';
+// smoke test: the same JS file the app uses, loaded through the dev server
+const mod = await import('/src/mobile/RobotCharacter.ts');
+const r = new mod.RobotCharacter(canvas,'high');
+r.resize(390,560);
+await r.load();
+r.frameFullBody();
+window.__ok = true;
+</script></body></html>
