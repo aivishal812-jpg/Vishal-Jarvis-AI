@@ -24,7 +24,7 @@ interface Bridge {
   deleteFact(id: string): void; clearMemory(): void; copyText(text: string): void; shareText(text: string): void;
   requestPermission(name: string): void; setTextScale(percent: number): void; exportTranscript(): void; shareTranscript(): void;
   pickImage?(): void; clearImage?(): void; openProSettings?(): void; takeLaunchAction?(): string;
-  pickDocument?(): void;
+  pickDocument?(): void; stopSpeaking?(): void;
 }
 declare global {
   interface Window {
@@ -579,6 +579,15 @@ window.MyraaEvents = event => {
     activity(result.message || (good ? 'Done.' : 'Not completed.'), good ? 'done' : 'warn', false);
     return;
   }
+  if (event.type === 'interrupted') {
+    speaking = false;
+    activity('Interrupted — answering your new message', 'work', false);
+    return;
+  }
+  if (event.type === 'speech') {
+    speaking = !!event.active;
+    return;
+  }
   if (event.type === 'delta' && event.id === requestId) {
     if (!streaming) {
       const item = append('model', ''); item.classList.add('streaming');
@@ -698,6 +707,13 @@ function autoVoice() {
   if (busy) return;
   el('voice').click();
 }
+/** True while the Android side is speaking a reply; a new message must silence it at once. */
+let speaking = false;
+function stopSpeakingNow() {
+  if (!speaking) return;
+  speaking = false;
+  bridge?.stopSpeaking?.();
+}
 function send() {
   const input = el<HTMLTextAreaElement>('input');
   let text = input.value.trim();
@@ -716,6 +732,9 @@ function send() {
     bridge.chat(text, requestId);
     return;
   }
+  // The user's next sentence always comes first: stop the voice before anything else, so the new
+  // question is answered immediately instead of queueing behind the answer being read out.
+  stopSpeakingNow();
   vibe();
   const mobile = parseMobileAction(text);
   if (mobile) {
@@ -739,7 +758,13 @@ function send() {
     return;
   }
   // Only a Gemini text reply needs the busy lock; phone actions always run immediately.
-  if (busy) { notice('A reply is still running. Tap Stop first, or wait for it.'); return; }
+  if (busy) {
+    // Do not make the user wait behind a reply they have already moved on from.
+    stopSpeakingNow();
+    bridge?.cancel?.();
+    busy = false; requestId = '';
+    activity('Interrupted — answering your new message', 'work', false);
+  }
   if (!bridge) { notice('Native chat runs inside the Android app. This is a browser preview.'); return; }
   if (!state.keyConfigured) { notice('Add your Gemini API key in Settings before sending.'); openSettings(); return; }
   requestId = crypto.randomUUID(); busy = true; pendingText = text;

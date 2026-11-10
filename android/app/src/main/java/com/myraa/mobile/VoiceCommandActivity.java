@@ -62,6 +62,11 @@ public final class VoiceCommandActivity extends Activity {
   private boolean ttsReady, resumed, closed, working;
   private String waitingToSpeak;
   private int followUps;
+  /** True while Jarvis's own voice is playing and the microphone is open for an interruption. */
+  private boolean interrupted;
+  private SpeechRecognizer barge;
+  private String bargeHeard;
+  private boolean bargeKicked;
   private MobileActions actions;
   private volatile HttpsURLConnection connection;
   private volatile boolean cancelled;
@@ -82,9 +87,15 @@ public final class VoiceCommandActivity extends Activity {
       if (ttsReady) {
         speech = new SpeechEngine(tts);
         speech.setListener(new SpeechEngine.Listener() {
-          @Override public void onStart() { AiTaskEvents.speaking = true; }
-          @Override public void onDone() { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
-          @Override public void onError(String message) { AiTaskEvents.speaking = false; ui.post(VoiceCommandActivity.this::afterSpeech); }
+          @Override public void onStart() {
+            AiTaskEvents.speaking = true;
+            // Barge-in: while the answer is being spoken, keep the microphone open. Anything the
+            // user says stops the answer and is treated as the next request, so a correction never
+            // has to wait for the end of a long reply.
+            ui.postDelayed(VoiceCommandActivity.this::scheduleBargeIn, 120);
+          }
+          @Override public void onDone() { AiTaskEvents.speaking = false; stopBargeIn(); ui.post(VoiceCommandActivity.this::afterSpeech); }
+          @Override public void onError(String message) { AiTaskEvents.speaking = false; stopBargeIn(); ui.post(VoiceCommandActivity.this::afterSpeech); }
         });
       }
       String pending = waitingToSpeak; waitingToSpeak = null;
@@ -187,6 +198,9 @@ public final class VoiceCommandActivity extends Activity {
   // ------------------------------------------------------------------ running a command
 
   private void handle(String raw) {
+    // A new request starts here, whether it came from the wake word, a follow-up or an
+    // interruption of the previous answer. The interruption gate is re-armed per answer.
+    interrupted = false;
     String text = stripWakeWord(raw);
     heard.setText(raw);
     if (text.isEmpty()) { listen(); return; }
@@ -308,11 +322,100 @@ public final class VoiceCommandActivity extends Activity {
     return text == null ? "" : text.replaceAll("[*_#`>|]+", "").replaceAll("\\[(.*?)\\]\\((.*?)\\)", "$1").replaceAll("\\s+", " ").trim();
   }
 
+  /**
+   * Listens while the answer is spoken. The moment a few real words arrive, the speech engine is
+   * stopped and that sentence becomes the new request, so its answer comes straight away.
+   *
+   * The ears are muted for the first moments so Jarvis never answers its own voice, and a very
+   * short "ok" or a cough is ignored: only a real sentence interrupts.
+   */
+  private void startBargeIn() {
+    if (closed || !resumed || working || interrupted) return;
+    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+    if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+    releaseBarge();
+    bargeHeard = "";
+    bargeKicked = false;
+    try { barge = SpeechRecognizer.createSpeechRecognizer(this); }
+    catch (RuntimeException unavailable) { barge = null; return; }
+    barge.setRecognitionListener(new RecognitionListener() {
+      public void onReadyForSpeech(Bundle b) { }
+      public void onBeginningOfSpeech() { }
+      public void onRmsChanged(float v) { }
+      public void onBufferReceived(byte[] b) { }
+      public void onEndOfSpeech() { }
+      public void onEvent(int t, Bundle b) { }
+      public void onPartialResults(Bundle b) { consider(b); }
+      public void onResults(Bundle b) { consider(b); restartBarge(); }
+      public void onError(int error) { restartBarge(); }
+    });
+    String language = JarvisPrefs.get(this).getString("language", "bn-IN");
+    Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+      .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+      .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
+      .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+      .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+    try { barge.startListening(intent); } catch (RuntimeException ignored) { barge = null; }
+  }
+
+  /** Opens the ears a moment after speech really started, not on its first syllable. */
+  private void scheduleBargeIn() {
+    if (closed || working) return;
+    if (bargeHeard == null || bargeHeard.isEmpty()) ui.postDelayed(this::startBargeIn, BargeIn.SETTLE_MS);
+    else startBargeIn();
+  }
+
+  private void consider(Bundle bundle) {
+    String said = best(bundle);
+    if (said.isEmpty()) return;
+    bargeHeard = said;
+    // Two real words, not "ok" or background chatter, and only after the engine has actually
+    // started, so the reply's own first syllables are never mistaken for the user.
+    if (!interrupts(bargeHeard) || interrupted || working) return;
+    interrupted = true;
+    releaseBarge();
+    if (speech != null) speech.stop();
+    if (tts != null) tts.stop();
+    AiTaskEvents.speaking = false;
+    BeepMuter.unmuteNow();
+    answer.setText(pick("শুনছি…", "Listening…"));
+    String command = stripWakeWord(bargeHeard);
+    if (command.isEmpty()) { interrupted = false; startBargeIn(); return; }
+    // The user's own words always win: the old answer is dropped and this becomes the request.
+    followUps = 0;
+    handle(command);
+  }
+
+  /** True only for a real sentence that is not simply Jarvis's own voice coming back. */
+  static boolean interrupts(String heard) {
+    String shown = answer == null ? "" : answer.getText().toString();
+    return BargeIn.interrupts(heard, shown);
+  }
+
+  private void restartBargeIn() {
+    if (closed || working || interrupted) return;
+    releaseBarge();
+    if (!AiTaskEvents.speaking) return;
+    ui.postDelayed(this::startBargeIn, 500);
+  }
+
+  private void restartBarge() { ui.postDelayed(this::startBargeIn, 450); }
+
+  private void stopBargeIn() {
+    releaseBarge();
+  }
+
+  private void releaseBarge() {
+    if (barge == null) return;
+    try { barge.cancel(); barge.destroy(); } catch (RuntimeException ignored) { /* already released */ }
+    barge = null;
+  }
+
   private void afterSpeech() {
     if (closed || working) return;
     String shown = answer.getText().toString().trim();
     boolean question = shown.endsWith("?") || shown.endsWith("？");
-    if (question && resumed && followUps < MAX_FOLLOW_UPS) { followUps++; listen(); return; }
+    if (question && resumed && followUps < MAX_FOLLOW_UPS && !interrupted) { followUps++; listen(); return; }
     ui.postDelayed(this::close, 900);
   }
 
@@ -321,6 +424,7 @@ public final class VoiceCommandActivity extends Activity {
     closed = true; cancelled = true;
     HttpsURLConnection c = connection; if (c != null) try { c.disconnect(); } catch (RuntimeException ignored) { /* tolerated: the popup may already be closed */ }
     releaseRecognizer();
+    releaseBarge();
     finish();
   }
 

@@ -648,6 +648,14 @@ public class MainActivity extends Activity {
     if (text.isEmpty() || text.length() > 8000 || id == null || !id.matches("[A-Za-z0-9-]{1,80}")) {
       error("text", "Enter a message between 1 and 8000 characters.", id); return;
     }
+    // The user speaking or typing while Jarvis is still talking wins: stop the voice first, so the
+    // new question is answered immediately instead of waiting behind the old answer. The answer
+    // that was interrupted is dropped from the transcript so it cannot be mistaken for an offer
+    // still in progress.
+    if (AiTaskEvents.speaking) {
+      runOnUiThread(this::stopSpeaking);
+      emit(json("type", "interrupted", "reason", "user"));
+    }
     if (!prefs.contains("keyCipher")) { error("text", "Add your Gemini API key in Settings.", id); return; }
     synchronized (chatLock) { if (busy) { error("text", "A reply is already running. Stop it or wait.", id); return; } busy = true; }
     ImageAttachment.claim(id);
