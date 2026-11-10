@@ -94,6 +94,8 @@ public class MainActivity extends Activity {
       if ("reply".equals(type) && prefs != null && spokenRepliesOn() && foreground) speakText(event.optString("text"));
     }
   };
+  private static final String LAST_CRASH_SEEN = "crashReportSeenUpTo";
+  private static final String SAW_INTERFACE = "interfaceWasDrawn";
   private int rendererFailures;
   private volatile boolean pageLoaded;
   private volatile boolean scriptsLoaded;
@@ -101,60 +103,169 @@ public class MainActivity extends Activity {
   private String personality;
 
   @Override public void onCreate(Bundle saved) {
-    super.onCreate(saved);
-    prefs = getSharedPreferences("myraa.mobile.v1", MODE_PRIVATE);
-    AiTaskEvents.attach(taskListener);
-    AiTaskCoordinator.recover(this);
-    getWindow().setStatusBarColor(Color.rgb(16,19,23));
-    getWindow().setNavigationBarColor(Color.rgb(16,19,23));
-    try { personality = new String(readLimited(getAssets().open("personality.txt"), 16000), StandardCharsets.UTF_8); }
-    catch (Exception ignored) { personality = "You are Vishal Jarvis, created by Vishal. Default to natural West Bengal Indian Bengali. Be honest about your capabilities."; }
-    tts = new TextToSpeech(this, status -> {
-      ttsReady = status == TextToSpeech.SUCCESS;
-      if (!ttsReady) {
-        emit(json("type", "capability", "tts", false,
-          "message", "Text-to-speech did not start. The reply still appears on screen; install or update \"Speech Recognition & Synthesis\" and try again."));
-        return;
+    // Nothing in this window may throw before setContentView(): an exception here closes the app
+    // before a single pixel is drawn, which is exactly the "tap and it shuts" report. If it happens,
+    // record it (private + readable-from-a-file-manager copy) and show it on screen instead.
+    try {
+      super.onCreate(saved);
+      prefs = getSharedPreferences("myraa.mobile.v1", MODE_PRIVATE);
+      AiTaskEvents.attach(taskListener);
+      AiTaskCoordinator.recover(this);
+      getWindow().setStatusBarColor(Color.rgb(16,19,23));
+      getWindow().setNavigationBarColor(Color.rgb(16,19,23));
+      try { personality = new String(readLimited(getAssets().open("personality.txt"), 16000), StandardCharsets.UTF_8); }
+      catch (Exception ignored) { personality = "You are Vishal Jarvis, created by Vishal. Default to natural West Bengal Indian Bengali. Be honest about your capabilities."; }
+      tts = new TextToSpeech(this, status -> {
+        ttsReady = status == TextToSpeech.SUCCESS;
+        if (!ttsReady) {
+          emit(json("type", "capability", "tts", false,
+            "message", "Text-to-speech did not start. The reply still appears on screen; install or update \"Speech Recognition & Synthesis\" and try again."));
+          return;
+        }
+        attachSpeechEngine();
+        String queued = pendingSpeech; pendingSpeech = null;
+        if (queued != null) speakText(queued);
+      });
+      mobileActions=new MobileActions(this,(id,result)->{
+        ActionWaiter waiter=actionWaiters.remove(id);
+        if(waiter!=null)waiter.complete(result);
+        emit(json("type","mobile-action-result","id",id,"result",result));
+      });
+      mobileActions.setSpeech(this::speakText);
+      audioCapture=new AudioCaptureEngine(this,new AudioCaptureEngine.Listener(){
+        public void onAudio(byte[] pcm,boolean speech){emitNativeAudio(pcm,speech);}
+        public void onDiagnostics(JSONObject diagnostics){emit(json("type","native-capture","ok",true,"diagnostics",diagnostics));}
+        public void onError(String message){emit(json("type","native-capture","ok",false,"message",message));}
+      });
+      if(!stopLiveRegistered){
+        if(Build.VERSION.SDK_INT>=33)registerReceiver(stopLiveReceiver,new IntentFilter(LiveVoiceService.STOP),Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(stopLiveReceiver,new IntentFilter(LiveVoiceService.STOP));
+        stopLiveRegistered=true;
       }
-      attachSpeechEngine();
-      String queued = pendingSpeech; pendingSpeech = null;
-      if (queued != null) speakText(queued);
-    });
-    mobileActions=new MobileActions(this,(id,result)->{
-      ActionWaiter waiter=actionWaiters.remove(id);
-      if(waiter!=null)waiter.complete(result);
-      emit(json("type","mobile-action-result","id",id,"result",result));
-    });
-    mobileActions.setSpeech(this::speakText);
-    audioCapture=new AudioCaptureEngine(this,new AudioCaptureEngine.Listener(){
-      public void onAudio(byte[] pcm,boolean speech){emitNativeAudio(pcm,speech);}
-      public void onDiagnostics(JSONObject diagnostics){emit(json("type","native-capture","ok",true,"diagnostics",diagnostics));}
-      public void onError(String message){emit(json("type","native-capture","ok",false,"message",message));}
-    });
-    if(!stopLiveRegistered){
-      if(Build.VERSION.SDK_INT>=33)registerReceiver(stopLiveReceiver,new IntentFilter(LiveVoiceService.STOP),Context.RECEIVER_NOT_EXPORTED);
-      else registerReceiver(stopLiveReceiver,new IntentFilter(LiveVoiceService.STOP));
-      stopLiveRegistered=true;
+      createWebView();
+      readLaunchIntent(getIntent());
+      // A page that never finishes loading leaves a blank window with no explanation. If the WebView
+      // has not reported a finished load after 12 seconds, show what is wrong instead of nothing.
+      final int mine = watchdogGeneration = watchdogGeneration + 1;
+      web.postDelayed(() -> {
+        if (mine != watchdogGeneration || pageLoaded) return;
+        if (!scriptsLoaded) showWebViewError(stuckPageMessage());
+      }, 12000);
     }
-    createWebView();
-    readLaunchIntent(getIntent());
-    // A page that never finishes loading leaves a blank window with no explanation. If the WebView
-    // has not reported a finished load after 12 seconds, show what is wrong instead of nothing.
-    final int mine = watchdogGeneration = watchdogGeneration + 1;
-    web.postDelayed(() -> {
-      if (mine != watchdogGeneration || pageLoaded) return;
-      if (!scriptsLoaded) showWebViewError(stuckPageMessage());
-    }, 12000);
+
+    /** Says which of the two things went wrong: the page file never arrived, or its script died. */
+    private String stuckPageMessage() {
+      String crash = CrashLog.read(this);
+      if (!crash.isEmpty()) {
+        String tail = crash.length() > 900 ? crash.substring(crash.length() - 900) : crash;
+        return "Vishal Jarvis hit an error while starting. Tap to retry.\n\n" + tail;
+      }
+      return "Vishal Jarvis could not finish loading. Tap to retry, or update Android System WebView.";
+  
+    } catch (Throwable failure) {
+      try { CrashLog.record(this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
+      showStartupCrash(failure);
+    }
+    try { showRecoveryIfLastLaunchDied(); } catch (Throwable ignored) { /* the interface is already up */ }
   }
 
-  /** Says which of the two things went wrong: the page file never arrived, or its script died. */
-  private String stuckPageMessage() {
+  /**
+   * The single most useful thing for "it opens and closes": the previous launch recorded a crash
+   * before the interface was ever drawn, so show that plain-Android screen instead of letting the
+   * same failure repeat silently. The marker is cleared when the interface reports it is drawn.
+   */
+  private void showRecoveryIfLastLaunchDied() {
+    if (prefs == null || web == null) return;
     String crash = CrashLog.read(this);
-    if (!crash.isEmpty()) {
-      String tail = crash.length() > 900 ? crash.substring(crash.length() - 900) : crash;
-      return "Vishal Jarvis hit an error while starting. Tap to retry.\n\n" + tail;
+    if (crash.isEmpty()) return;
+    int seen = prefs.getInt(LAST_CRASH_SEEN, 0);
+    if (crash.length() <= seen) return;                       // nothing new to report
+    if (prefs.getBoolean(SAW_INTERFACE, false)) return;        // it already ran fine once
+    prefs.edit().putInt(LAST_CRASH_SEEN, crash.length()).apply();
+    showRecovery(crash);
+  }
+
+  @Override public void onSaveInstanceState(Bundle out) {
+    try { super.onSaveInstanceState(out); } catch (Throwable ignored) { /* a lost scroll position must never close the app */ }
+  }
+
+  /**
+   * Shown instead of the interface when the previous launch died. It is a plain Android TextView:
+   * no WebView, no 3D, no network, so it cannot fail the same way twice. From here the user can
+   * still share the exact error, try again with plain graphics, or open the settings screen.
+   */
+  private void showRecovery(String crash) {
+    try {
+      android.widget.LinearLayout column = new android.widget.LinearLayout(this);
+      column.setOrientation(android.widget.LinearLayout.VERTICAL);
+      column.setBackgroundColor(Color.rgb(16, 19, 23));
+      column.setPadding(34, 74, 34, 34);
+
+      TextView title = new TextView(this);
+      title.setText("Vishal Jarvis closed unexpectedly last time");
+      title.setTextColor(Color.WHITE); title.setTextSize(17);
+      column.addView(title);
+
+      TextView body = new TextView(this);
+      String tail = crash.length() > 1200 ? crash.substring(crash.length() - 1200) : crash;
+      body.setText("The interface is starting again in plain graphics mode. Here is what the phone recorded:\n\n" + tail);
+      body.setTextColor(Color.rgb(200, 200, 200)); body.setTextSize(12);
+      body.setPadding(0, 18, 0, 18);
+      column.addView(body);
+
+      TextView again = new TextView(this);
+      again.setText("Open the interface again");
+      again.setTextColor(Color.rgb(255, 138, 148)); again.setTextSize(15); again.setPadding(0, 26, 0, 22);
+      again.setOnClickListener(v -> { prefs.edit().putBoolean(SAW_INTERFACE, false).apply(); recreate(); });
+      column.addView(again);
+
+      TextView share = new TextView(this);
+      share.setText("Share this report");
+      share.setTextColor(Color.rgb(255, 217, 194)); share.setTextSize(15); share.setPadding(0, 0, 0, 22);
+      share.setOnClickListener(v -> {
+        try {
+          startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "Vishal Jarvis " + BuildInfo.VERSION + " crash")
+            .putExtra(Intent.EXTRA_TEXT, crash), "Share crash report"));
+        } catch (RuntimeException noShareApp) { /* the text is already on screen */ }
+      });
+      column.addView(share);
+
+      TextView plain = new TextView(this);
+      plain.setText("Start with the graphics turned off");
+      plain.setTextColor(Color.rgb(255, 138, 148)); plain.setTextSize(15); plain.setPadding(0, 0, 0, 22);
+      plain.setOnClickListener(v -> {
+        prefs.edit().putString("quality", "low").putBoolean(SAW_INTERFACE, false).apply();
+        recreate();
+      });
+      column.addView(plain);
+
+      android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+      scroll.addView(column);
+      setContentView(scroll);
+    } catch (Throwable fallback) {
+      showStartupCrash(fallback); // even the simple screen is guarded
     }
-    return "Vishal Jarvis could not finish loading. Tap to retry, or update Android System WebView.";
+  }
+
+  /** The screen of last resort: readable text instead of a window that vanishes. */
+  private void showStartupCrash(Throwable failure) {
+    if (isFinishing()) return;
+    StringWriter text = new StringWriter();
+    failure.printStackTrace(new PrintWriter(text));
+    String detail = text.toString();
+    if (detail.length() > 1400) detail = detail.substring(0, 1400);
+    android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+    TextView message = new TextView(this);
+    message.setText("Vishal Jarvis could not start on this phone.\n\nTap to retry. A copy of this text is in "
+      + "Android/data/com.myraa.mobile/files/crash-log.txt\n\n" + detail);
+    message.setTextColor(Color.WHITE);
+    message.setTextSize(13);
+    message.setPadding(30, 70, 30, 40);
+    message.setBackgroundColor(Color.rgb(16, 19, 23));
+    scroll.addView(message);
+    scroll.setOnClickListener(v -> recreate());
+    try { setContentView(scroll); } catch (Throwable ignored) { /* nothing left to try */ }
   }
 
   @Override protected void onNewIntent(Intent intent) {
@@ -232,8 +343,11 @@ public class MainActivity extends Activity {
       }
       if (web != null) { setContentView(web); return; }
       web = new WebView(this);
-    } catch (RuntimeException error) {
-      showWebViewError("Android WebView could not start. Check that Android System WebView is installed and enabled, then tap to retry."); return;
+    } catch (Throwable error) {
+      // Throwable, not RuntimeException: a missing WebView class or a link error on an old phone
+      // used to escape here and close the app instead of showing this message.
+      try { CrashLog.record(this, Thread.currentThread(), error); } catch (Throwable ignored) { /* already failing */ }
+      showWebViewError("Android WebView could not start. Update Android System WebView in the Play Store, then tap here to retry."); return;
     }
     web.setBackgroundColor(Color.rgb(16,19,23));
     WebSettings settings = web.getSettings();
@@ -396,12 +510,19 @@ public class MainActivity extends Activity {
         ? "Android blocked that because a permission is missing. Open Settings - Permissions, allow it, then try again."
         : "That did not work on this phone: " + failure.getClass().getSimpleName();
       try { emit(json("type", "error", "service", "bridge", "message", why)); } catch (Throwable ignored) { /* the page may be gone */ }
+      // The page can take it from here (it shows a banner and remembers the failure), so the same
+      // error is not posted again as a dialog when the user next opens the app.
+      try { prefs.edit().putInt(LAST_CRASH_SEEN, CrashLog.length(this)).apply(); } catch (Throwable ignored) { /* prefs may not exist yet */ }
     }
   }
 
   public final class NativeBridge {
     /** The bundle calls this once it has drawn the shell; a silent script failure stays visible. */
-    @JavascriptInterface public void pageReady() { scriptsLoaded = true; pageLoaded = true; android.util.Log.i("MyraaWeb", "Interface drawn"); }
+    @JavascriptInterface public void pageReady() {
+      scriptsLoaded = true; pageLoaded = true;
+      prefs.edit().putBoolean(SAW_INTERFACE, true).apply();
+      android.util.Log.i("MyraaWeb", "Interface drawn");
+    }
     @JavascriptInterface public String getState() {
       // The page reads this before it draws anything, so it must always answer.
       try { return state().toString(); } catch (Throwable failure) {

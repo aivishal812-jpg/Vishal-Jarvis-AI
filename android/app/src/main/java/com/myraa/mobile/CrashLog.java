@@ -12,6 +12,21 @@ import java.util.Locale;
 final class CrashLog {
   private static final int MAX_BYTES = 64 * 1024;
   static File file(Context context) { return new File(context.getFilesDir(), "crash-log.txt"); }
+
+  /**
+   * A second copy in the app's external folder. The private one can only be read from inside the
+   * app, which is no help when the app closes before it draws: a file manager can open this path
+   * (Android/data/com.myraa.mobile/files/crash-log.txt) and the text can be copied out by hand.
+   */
+  private static File externalFile(Context context) {
+    try {
+      File dir = context.getExternalFilesDir(null);
+      return dir == null ? null : new File(dir, "crash-log.txt");
+    } catch (RuntimeException unavailable) { return null; }
+  }
+
+  /** Length of the stored log; the app remembers how much it has already shown the user. */
+  static int length(Context context) { return read(context).length(); }
   static void install(Context context) {
     final Context app = context.getApplicationContext();
     final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
@@ -31,8 +46,14 @@ final class CrashLog {
     String previous = read(context);
     String combined = previous + text;
     if (combined.length() > MAX_BYTES) combined = combined.substring(combined.length() - MAX_BYTES);
-    try (OutputStream stream = new FileOutputStream(file(context))) { stream.write(combined.getBytes(StandardCharsets.UTF_8)); }
+    byte[] bytes = combined.getBytes(StandardCharsets.UTF_8);
+    try (OutputStream stream = new FileOutputStream(file(context))) { stream.write(bytes); }
     catch (IOException ignored) { /* nothing to do on release of a temporary object */ }
+    File copy = externalFile(context);
+    if (copy != null) {
+      try (OutputStream stream = new FileOutputStream(copy)) { stream.write(bytes); }
+      catch (IOException | RuntimeException ignored) { /* the private copy already has it */ }
+    }
   }
   static String read(Context context) {
     File f = file(context);
