@@ -97,21 +97,33 @@ public class MainActivity extends Activity {
   private static final String LAST_CRASH_SEEN = "crashReportSeenUpTo";
   private static final String SAW_INTERFACE = "interfaceWasDrawn";
   private static final String PAGE_SERVED = "bundledPageWasServed";
+  /** Opens the app straight to the start-up trace: adb, or a long-press shortcut. */
+  static final String EXTRA_TRACE = "com.myraa.mobile.SHOW_TRACE";
   private int rendererFailures;
   private volatile boolean pageLoaded;
   private volatile boolean scriptsLoaded;
   private int watchdogGeneration;
   private String personality;
 
+  /** Writes one checkpoint of the launch to startup-trace.txt (see BuildOn). */
+  private static void trace(String step) { BuildOn.trace(step); }
+
   @Override public void onCreate(Bundle saved) {
     // Nothing in this window may throw before setContentView(): an exception here closes the app
     // before a single pixel is drawn, which is exactly the "tap and it shuts" report. If it happens,
     // record it (private + readable-from-a-file-manager copy) and show it on screen instead.
+    // The launcher theme paints instantly, so the tap never looks like "nothing happened".
+    trace("MainActivity.onCreate: entered");
+    try { super.onCreate(saved); } catch (Throwable ignored) { /* reported by the skin below instead */ }
+    trace("MainActivity: super.onCreate done");
+    try { setTheme(android.R.style.Theme_Material_NoActionBar); } catch (Throwable ignored) { /* the manifest theme is fine */ }
     try {
-      super.onCreate(saved);
       prefs = getSharedPreferences("myraa.mobile.v1", MODE_PRIVATE);
+      trace("MainActivity: prefs opened");
       AiTaskEvents.attach(taskListener);
+      trace("MainActivity: task events attached");
       AiTaskCoordinator.recover(this);
+      trace("MainActivity: tasks recovered");
       getWindow().setStatusBarColor(Color.rgb(16,19,23));
       getWindow().setNavigationBarColor(Color.rgb(16,19,23));
       try { personality = new String(readLimited(getAssets().open("personality.txt"), 16000), StandardCharsets.UTF_8); }
@@ -127,12 +139,14 @@ public class MainActivity extends Activity {
         String queued = pendingSpeech; pendingSpeech = null;
         if (queued != null) speakText(queued);
       });
+      trace("MainActivity: tts created");
       mobileActions=new MobileActions(this,(id,result)->{
         ActionWaiter waiter=actionWaiters.remove(id);
         if(waiter!=null)waiter.complete(result);
         emit(json("type","mobile-action-result","id",id,"result",result));
       });
       mobileActions.setSpeech(this::speakText);
+      trace("MainActivity: actions ready");
       audioCapture=new AudioCaptureEngine(this,new AudioCaptureEngine.Listener(){
         public void onAudio(byte[] pcm,boolean speech){emitNativeAudio(pcm,speech);}
         public void onDiagnostics(JSONObject diagnostics){emit(json("type","native-capture","ok",true,"diagnostics",diagnostics));}
@@ -143,7 +157,9 @@ public class MainActivity extends Activity {
         else registerReceiver(stopLiveReceiver,new IntentFilter(LiveVoiceService.STOP));
         stopLiveRegistered=true;
       }
+      trace("MainActivity: creating the WebView");
       createWebView();
+      trace("MainActivity: WebView created (assets requested next)");
       readLaunchIntent(getIntent());
       // A page that never finishes loading leaves a blank window with no explanation. If the WebView
       // has not reported a finished load after 12 seconds, show what is wrong instead of nothing.
@@ -154,10 +170,38 @@ public class MainActivity extends Activity {
         if (!scriptsLoaded) showWebViewError(stuckPageMessage());
       }, 12000);
     } catch (Throwable failure) {
+      trace("MainActivity.onCreate FAILED: " + failure);
       try { CrashLog.record(this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
       showStartupCrash(failure);
     }
+    trace("MainActivity.onCreate: finished");
     try { showRecoveryIfLastLaunchDied(); } catch (Throwable ignored) { /* the interface is already up */ }
+    // A launch that dies inside onCreate never reaches the recovery screen (the window is already
+    // gone), so the shortcut below lets the user read the trace without opening the app at all.
+    try { if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_TRACE, false)) showTraceScreen(); }
+    catch (Throwable ignored) { /* the intent is not worth a crash */ }
+  }
+
+  /** The exact checkpoints of the last launches: the last line is where it stopped. */
+  private void showTraceScreen() {
+    String trace = "";
+    try {
+      File file = new File(BuildOn.traceDir == null ? getFilesDir() : BuildOn.traceDir, "startup-trace.txt");
+      if (file.exists()) {
+        byte[] bytes = readLimited(new FileInputStream(file), 20000);
+        trace = new String(bytes, StandardCharsets.UTF_8);
+      }
+    } catch (Throwable unreadable) { trace = "The trace file could not be read: " + unreadable; }
+    String text = trace.isEmpty() ? "No start-up trace yet. Open the app once, then come back here." : trace;
+    android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+    TextView view = new TextView(this);
+    view.setText(text.length() > 6000 ? text.substring(text.length() - 6000) : text);
+    view.setTextColor(Color.WHITE); view.setTextSize(11);
+    view.setTypeface(android.graphics.Typeface.MONOSPACE);
+    view.setBackgroundColor(Color.rgb(10, 6, 10));
+    view.setPadding(24, 64, 24, 32);
+    scroll.addView(view);
+    setContentView(scroll);
   }
 
   /** Says which of the two things went wrong: the page file never arrived, or its script died. */
@@ -242,6 +286,12 @@ public class MainActivity extends Activity {
             .putExtra(Intent.EXTRA_TEXT, crash), "Share crash report"));
         } catch (RuntimeException noShareApp) { /* the text is already on screen */ }
       });
+      TextView traceButton = new TextView(this);
+      traceButton.setText("Show the start-up trace");
+      traceButton.setTextColor(Color.rgb(255, 217, 194)); traceButton.setTextSize(15); traceButton.setPadding(0, 0, 0, 22);
+      traceButton.setOnClickListener(v -> showTraceScreen());
+      column.addView(traceButton);
+
       column.addView(share);
 
       TextView plain = new TextView(this);
@@ -376,9 +426,13 @@ public class MainActivity extends Activity {
     web.addJavascriptInterface(new NativeBridge(), "MyraaNative");
     web.setWebViewClient(new WebViewClient() {
       @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+        trace("WebView resource error " + error.getErrorCode() + ": " + request.getUrl().getPath());
         android.util.Log.e("MyraaWeb", "Resource error " + error.getErrorCode() + ": " + request.getUrl().getPath());
       }
-      @Override public void onPageFinished(WebView view, String url) { pageLoaded = true; android.util.Log.i("MyraaWeb", "Bundled page ready"); }
+      @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+        trace("WebView http " + response.getStatusCode() + ": " + request.getUrl().getPath());
+      }
+      @Override public void onPageFinished(WebView view, String url) { pageLoaded = true; trace("WebView.onPageFinished"); android.util.Log.i("MyraaWeb", "Bundled page ready"); }
       @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
         if (!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getHost())) return blocked();
@@ -404,6 +458,7 @@ public class MainActivity extends Activity {
       }
       @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return true; }
       @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+        trace("WebView renderer died (crashed=" + detail.didCrash() + ")");
         cancelLive();
         view.destroy(); web = null;
         if (++rendererFailures <= 2) createWebView();
@@ -532,8 +587,10 @@ public class MainActivity extends Activity {
 
   public final class NativeBridge {
     /** The bundle calls this once it has drawn the shell; a silent script failure stays visible. */
+    /** The page's own checkpoints continue the same start-up trace on disk. */
+    @JavascriptInterface public void trace(String step) { BuildOn.trace(step == null ? "page: ?" : step); }
     @JavascriptInterface public void pageReady() {
-      scriptsLoaded = true; pageLoaded = true;
+      scriptsLoaded = true; pageLoaded = true; trace("pageReady: interface drawn");
       prefs.edit().putBoolean(SAW_INTERFACE, true).apply();
       android.util.Log.i("MyraaWeb", "Interface drawn");
     }

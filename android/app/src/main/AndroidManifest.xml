@@ -113,6 +113,15 @@
     <activity android:name=".ProSettingsActivity" android:exported="false" android:label="Jarvis Pro settings" />
     <activity android:name=".MainActivity" android:launchMode="singleTask" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize">
       <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+      <!-- Long-press the launcher icon to open the plain start-up trace: it works even when the
+           normal interface dies before it draws, so a broken launch can always be read on the phone. -->
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+        <category android:name="com.myraa.mobile.SHORTCUT_TRACE" />
+      </intent-filter>
+      <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+      <meta-data android:name="com.myraa.mobile.SHORTCUT_TRACE" android:value="com.myraa.mobile.SHOW_TRACE" />
       <intent-filter><action android:name="android.intent.action.ASSIST" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
       <intent-filter><action android:name="android.intent.action.VOICE_COMMAND" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
     </activity>

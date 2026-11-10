@@ -26,6 +26,8 @@ interface Bridge {
   requestPermission(name: string): void; setTextScale(percent: number): void; exportTranscript(): void; shareTranscript(): void;
   pickImage?(): void; clearImage?(): void; openProSettings?(): void; takeLaunchAction?(): string;
   pickDocument?(): void; stopSpeaking?(): void; pageReady?(): void; shareCrashLog?(): void;
+  /** One line of the launch trace, written to startup-trace.txt on the phone. */
+  trace?(step: string): void;
 }
 declare global {
   interface Window {
@@ -1130,6 +1132,12 @@ function startFailure(error: unknown) {
 }
 window.addEventListener('error', event => startFailure(event.error || event.message));
 window.addEventListener('unhandledrejection', event => startFailure(event.reason));
+// The page half of the launch trace: the Java side writes its checkpoints, these continue the same
+// file, so a blank or dying screen still leaves an exact record of how far the script got.
+const trace = (step: string) => { try { bridge?.trace?.(step); } catch { /* tracing is a courtesy */ } };
+trace('page: bundle executed');
+window.addEventListener('error', event => trace(`page: uncaught ${String(event.message).slice(0, 160)}`));
 // Tell Android the interface is really on screen, so its start-up watchdog never reports a false alarm.
 try { bridge?.pageReady?.(); } catch { /* the bridge is optional in a browser */ }
+trace('page: shell drawn, ready');
 document.body.setAttribute('data-ready', 'true');

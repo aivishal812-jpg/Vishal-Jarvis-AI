@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Vishal Jarvis icon to read the start-up trace. This screen is plain Android, so
+     it still works when the normal interface cannot draw: it is how a launch that closes itself
+     gets diagnosed without a computer. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut
+    android:shortcutId="startup-trace"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/shortcut_trace"
+    android:shortcutLongLabel="@string/shortcut_trace_long">
+    <intent
+      android:action="android.intent.action.MAIN"
+      android:targetPackage="com.myraa.mobile"
+      android:targetClass="com.myraa.mobile.MainActivity">
+      <extra android:name="com.myraa.mobile.SHOW_TRACE" android:value="true" />
+    </intent>
+    <categories android:name="com.myraa.mobile.SHORTCUT_TRACE" />
+  </shortcut>
+</shortcuts>

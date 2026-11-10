@@ -4,4 +4,6 @@
   <string name="accessibility_service_description">Lets Vishal Jarvis read the text of the screen you are looking at (for example to answer a question about it, reply to a message, or fill a form with values you give), and send the message you approved inside WhatsApp, Telegram, Instagram or Messenger. It never types, clicks, submits or sends anything without your confirmation.</string>
   <string name="widget_description">Talk to Vishal Jarvis with one tap</string>
   <string name="notification_listener_label">Vishal Jarvis notification reader</string>
+  <string name="shortcut_trace">Start-up trace</string>
+  <string name="shortcut_trace_long">Read why the last start failed</string>
 </resources>
