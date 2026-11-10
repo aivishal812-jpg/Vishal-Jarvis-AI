@@ -13,6 +13,8 @@
 
 অ্যাপ যদি খোলার সাথে সাথে বন্ধ হয়ে যায়, **আবার খুলুন**। দ্বিতীয়বার ও আর বন্ধ হবে না — বদলে একটা **সাদাসিধা (WebView-হীন) স্ক্রিন** আসবে যেখানে লেখা থাকবে ফোন ঠিক কোন লাইনে আটকেছে, সাথে দুটো বোতাম: **Share this report** (সরাসরি WhatsApp/মেইলে) আর **Start with the graphics turned off**। ওই লেখাটা পাঠালেই সমস্যাটা ধরা যাবে।
 
+**আসল কারণ (build 48 থেকে ধরা পড়েছে):** crash log-এ দেখা গেল `JarvisApp.onCreate → CallAssistService.start → ContextImpl.startForegroundService`। Android 12+ এ app background-এ থাকলে foreground service start করা যায় না, তখন `IllegalStateException` ছোড়ে — আর সেটা Application.onCreate-এ হলে Activity আঁকার আগেই process মারা যায়। এখন call card **MainActivity.onResume()**-এ armed হয় (যখন Android অনুমতি দেয়), আর `CallAssistService.start()` throw না করে `false` রিটার্ন করে। Broadcast receiver-দুটোও guarded।
+
 কেন এমন: crash যদি WebView চালু হওয়ার *আগেই* হয়, তাহলে JavaScript দিয়ে কিছু দেখানোই সম্ভব না — তাই পুরো ব্যবস্থাটা এখন **native** দিকে:
 - `onCreate`-এর প্রতিটা ধাপ guarded (Throwable), ব্যর্থ হলে স্ক্রিনে আসল stack trace।
 - crash log এখন **দুই জায়গায়** লেখা হয় — app-private + `Android/data/com.myraa.mobile/files/crash-log.txt` (file manager দিয়ে খোলা যায়)।

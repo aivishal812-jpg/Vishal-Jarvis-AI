@@ -569,11 +569,24 @@ public final class CallAssistService extends Service {
     stopSelf();
   }
 
-  /** Called by the app so the switch, the card and Android all agree. */
-  static void start(Context context) {
+  /**
+   * Called by the app so the switch, the card and Android all agree.
+   *
+   * Returns false instead of throwing. Android 12+ throws IllegalStateException when a foreground
+   * service is started while the app has no visible window, and an exception escaping here used to
+   * close the app before it drew anything. Callers decide what to do about a refusal; nothing about
+   * a refused call card is worth losing the app over.
+   */
+  static boolean start(Context context) {
     Intent intent = new Intent(context, CallAssistService.class).setAction(START);
-    if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
-    else context.startService(intent);
+    try {
+      if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
+      else context.startService(intent);
+      return true;
+    } catch (Throwable refused) {
+      try { CrashLog.record(context, Thread.currentThread(), refused); } catch (Throwable ignored) { /* already failing */ }
+      return false;
+    }
   }
 
   static void stop(Context context) {

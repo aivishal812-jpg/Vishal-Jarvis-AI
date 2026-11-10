@@ -11,6 +11,15 @@ import android.content.Intent;
  */
 public final class ProactiveReceiver extends BroadcastReceiver {
   @Override public void onReceive(Context context, Intent intent) {
+    // A broadcast receiver that throws takes the whole process down (and on Android 12+ a background
+    // start refusal is a plain exception). Rescheduling a reminder is never worth losing the app.
+    try { handle(context, intent); }
+    catch (Throwable failure) {
+      try { CrashLog.record(context, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
+    }
+  }
+
+  private void handle(Context context, Intent intent) {
     if (intent == null) return;
     String action = intent.getAction();
     if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {

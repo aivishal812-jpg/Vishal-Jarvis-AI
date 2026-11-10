@@ -1235,6 +1235,12 @@ public class MainActivity extends Activity {
     foreground=true;AiTaskEvents.visible=true;super.onResume();AiTaskCoordinator.recover(this);if(pendingUiAction!=null){Runnable action=pendingUiAction;pendingUiAction=null;action.run();}if(pendingLiveId!=null&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)provisionLive(pendingLiveId);
     if(web!=null){web.onResume();emit(json("type", "state", "state", state()));web.evaluateJavascript("window.dispatchEvent(new CustomEvent('myraa:lifecycle',{detail:{active:true,backgroundLive:"+allowBackgroundLive+"}}))",null);}
     if(pendingAutoVoice&&web!=null)emit(json("type","auto-voice"));
+    // Re-arm the call card here, not in Application.onCreate: Android only allows a foreground
+    // service once the app has a visible window, and the refusal used to arrive as an
+    // IllegalStateException before the first screen existed.
+    try {
+      if (JarvisPrefs.callMode(this) != CallCoach.Mode.OFF && !CallAssistService.running()) CallAssistService.start(this);
+    } catch (Throwable ignored) { /* the settings switch re-arms it */ }
     if(JarvisPrefs.wakeWord(this)&&!WakeWordService.running)WakeWordService.start(this);
     if(web!=null&&UiAutomationService.available()!=lastAccessibility){lastAccessibility=UiAutomationService.available();emit(json("type","permissions","state",state()));}
   }

@@ -13,6 +13,15 @@ import org.json.JSONObject;
 public final class ReminderReceiver extends BroadcastReceiver {
   static final String CHANNEL = "reminders";
   @Override public void onReceive(Context context, Intent intent) {
+    // A reminder is not worth a process crash: on Android 12+ a background service start from here
+    // throws, and an exception in a receiver closes the app.
+    try { handle(context, intent); }
+    catch (Throwable failure) {
+      try { CrashLog.record(context, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
+    }
+  }
+
+  private void handle(Context context, Intent intent) {
     String action = intent == null ? null : intent.getAction();
     if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
       ReminderScheduler.rescheduleAll(context);

@@ -14,9 +14,10 @@ public final class JarvisApp extends Application {
     try { ReminderScheduler.rescheduleAll(this); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
     try { ProactiveScheduler.reschedule(this); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
     try { MemoryDb.importLegacy(this); } catch (Throwable ignored) { /* nothing to do on release of a temporary object */ }
-    // Restart the call card after a reboot or an app update, but only when the user left it on.
-    try {
-      if (JarvisPrefs.callMode(this) != CallCoach.Mode.OFF) CallAssistService.start(this);
-    } catch (Throwable ignored) { /* Android may refuse a background start; the settings switch re-arms it */ }
+    // The call card is NOT started here. Android 12+ refuses to start a foreground service from
+    // Application.onCreate when nobody is looking at the app, and the refusal is a plain
+    // IllegalStateException: it used to escape this method and kill the process before the first
+    // screen existed (the phone showed "keeps stopping").
+    // MainActivity.onResume() arms it instead, which is the moment Android allows it.
   }
 }

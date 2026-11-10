@@ -169,6 +169,14 @@ for cls, raw in files.items():
         elif type_name[0].islower():
             problems.append(f'{cls}.java:{line} catch ({type_name} {var_name}) -> "{type_name}" is not a class name')
 
+# Background-start guard: Android 12+ throws when a foreground service is started while the app has
+# no visible window, and an exception thrown from Application.onCreate kills the process before the
+# first screen is drawn ("the app opens and immediately closes"). Only Activities and receivers may
+# start services; the Application class must not.
+app_class = files.get('JarvisApp')
+if app_class and re.search(r'\bstart(?:Foreground)?Service\s*\(', strip(app_class)):
+    problems.append('JarvisApp.java -> starts a service from Application.onCreate (Android 12+ throws there)')
+
 for p in problems:
     print(p)
 print(f'files={len(files)} private-declarations={sum(len(v) for v in private_names.values())} problems={len(problems)}')
