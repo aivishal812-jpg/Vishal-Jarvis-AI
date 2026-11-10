@@ -32,8 +32,29 @@ public final class NameMatcher {
     public final String phone;
     public final double score;
     public final String reason;
+    /** 0 contact id, 1 exact name, 2 learned pick, 3 variant, 4 phonetic, 5 partial/word. */
+    public final int level;
+    public final String contactId;
     public Candidate(String name, String phone, double score, String reason) {
-      this.name = name; this.phone = phone; this.score = score; this.reason = reason;
+      this(name, phone, score, reason, 5, "");
+    }
+    public Candidate(String name, String phone, double score, String reason, int level, String contactId) {
+      this.name = name == null ? "" : name; this.phone = phone == null ? "" : phone;
+      this.score = score; this.reason = reason == null ? "" : reason;
+      this.level = level; this.contactId = contactId == null ? "" : contactId;
+    }
+  }
+
+  /** A public contact carries its Android id when the caller has it, so a learned pick is exact. */
+  public static final class Person {
+    public final String name;
+    public final String phone;
+    public final String contactId;
+    public final List<String> aliases;
+    public Person(String name, String phone, String contactId, List<String> aliases) {
+      this.name = name == null ? "" : name; this.phone = phone == null ? "" : phone;
+      this.contactId = contactId == null ? "" : contactId;
+      this.aliases = aliases == null ? Collections.<String>emptyList() : aliases;
     }
   }
 
@@ -42,8 +63,16 @@ public final class NameMatcher {
     public final Candidate best;
     public final List<Candidate> ranked;
     public final String query;
+    /**
+     * True when the address book cannot settle it and the user must say a word instead of picking
+     * from a long list ("Baba" versus "Baban", "Baban-2", "Bablu").
+     */
+    public final boolean askWord;
     public Decision(String verdict, Candidate best, List<Candidate> ranked, String query) {
-      this.verdict = verdict; this.best = best; this.ranked = ranked; this.query = query;
+      this(verdict, best, ranked, query, false);
+    }
+    public Decision(String verdict, Candidate best, List<Candidate> ranked, String query, boolean askWord) {
+      this.verdict = verdict; this.best = best; this.ranked = ranked; this.query = query; this.askWord = askWord;
     }
   }
 
@@ -89,6 +118,118 @@ public final class NameMatcher {
     value = OBJECT_SUFFIX.matcher(value).replaceFirst("");
     value = value.replaceFirst("(?:কে)$", "");
     return value.trim().replaceAll("\\s+", " ");
+  }
+
+  /**
+   * The entry point the app uses: the address book with contact ids, the learned picks, and the
+   * user's own spoken aliases. One call, one decision, no long list.
+   */
+  public static Decision resolve(String spoken, List<Person> people, ContactMemory memory,
+                                 Map<String, String> aliases) {
+    String query = extractSpokenName(spoken);
+    List<Candidate> ranked = new ArrayList<>();
+    if (query.isEmpty() || people == null || people.isEmpty()) {
+      return new Decision("none", null, ranked, query);
+    }
+    String queryFold = BengaliPhonetics.fold(query);
+    String queryKey = BengaliPhonetics.phoneticKey(query);
+    String queryCons = BengaliPhonetics.consonantKey(queryFold);
+    Set<String> queryVars = BengaliPhonetics.latinVariants(query);
+
+    // A word the user has already settled ("Baba" → their father) wins over any guess.
+    ContactMemory.Pick learned = memory == null ? null : memory.lookup(query);
+    if (learned != null) {
+      Person known = find(people, learned.contactId, learned.phone, learned.name);
+      if (known != null) {
+        Candidate pick = new Candidate(known.name, known.phone, 0.995, "learned", 2, known.contactId);
+        return new Decision("exact", pick, Collections.singletonList(pick), query);
+      }
+    }
+
+    String aliasTarget = null;
+    if (aliases != null) {
+      aliasTarget = aliases.get(queryFold);
+      if (aliasTarget == null) aliasTarget = aliases.get(queryKey);
+    }
+
+    String spokenDirect = spoken == null ? "" : spoken.trim();
+    for (Person person : people) {
+      if (person == null || person.name.trim().isEmpty()) continue;
+      Score best = scoreAgainst(query, queryFold, queryKey, queryCons, queryVars, person.name);
+      if (!person.contactId.isEmpty() && spokenDirect.equals(person.contactId)) {
+        best = best.max(new Score(1.0, "contact-id", 0));
+      }
+      if (aliasTarget != null && aliasTarget.equalsIgnoreCase(person.name)) {
+        best = best.max(new Score(0.98, "user-alias", 2));
+      }
+      if (aliases != null) {
+        String byName = aliases.get(BengaliPhonetics.fold(person.name));
+        if (byName != null && BengaliPhonetics.fold(byName).equals(queryFold)) {
+          best = best.max(new Score(0.98, "user-alias", 2));
+        }
+      }
+      for (String extra : person.aliases) {
+        best = best.max(scoreAgainst(query, queryFold, queryKey, queryCons, queryVars, extra));
+        if (aliasTarget != null && extra != null && aliasTarget.equalsIgnoreCase(extra)) {
+          best = best.max(new Score(0.97, "nickname-alias", 2));
+        }
+      }
+      if (best.value >= 0.6) {
+        ranked.add(new Candidate(person.name, person.phone, clamp(best.value), best.reason, best.level, person.contactId));
+      }
+    }
+    return decide(query, ranked);
+  }
+
+  private static Person find(List<Person> people, String contactId, String phone, String name) {
+    for (Person person : people) {
+      if (person == null) continue;
+      if (contactId != null && !contactId.isEmpty() && contactId.equals(person.contactId)) return person;
+      if (phone != null && !phone.isEmpty() && phone.equals(person.phone)) return person;
+    }
+    for (Person person : people) {
+      if (person != null && name != null && !name.isEmpty() && name.equalsIgnoreCase(person.name)) return person;
+    }
+    return null;
+  }
+
+  /** Ranks, then answers one of: this person, confirm this person, ask which word, or none. */
+  static Decision decide(String query, List<Candidate> ranked) {
+    if (ranked.isEmpty()) return new Decision("none", null, ranked, query);
+    Collections.sort(ranked, new Comparator<Candidate>() {
+      public int compare(Candidate a, Candidate b) {
+        // The tier of the match is what matters first: an exact name beats any spelling variant.
+        if (a.level != b.level) return Integer.compare(a.level, b.level);
+        int byScore = Double.compare(b.score, a.score);
+        if (byScore != 0) return byScore;
+        return a.name.compareToIgnoreCase(b.name);
+      }
+    });
+    Candidate first = ranked.get(0);
+    Candidate second = ranked.size() > 1 ? ranked.get(1) : null;
+    boolean samePerson = second != null && !first.phone.isEmpty() && first.phone.equals(second.phone);
+
+    // Same person saved twice (two numbers, a nickname) is never a question.
+    if (second == null || samePerson) {
+      String verdict = first.level <= 1 ? "exact" : first.score >= AUTO_SCORE ? "confident" : "confirm";
+      return new Decision(verdict, first, Collections.singletonList(first), query);
+    }
+
+    double gap = first.score - second.score;
+    // A clear winner by name exactly, or a learned/variant pick with a real margin.
+    if (first.level <= 2 && gap >= AUTO_GAP) {
+      return new Decision(first.level <= 1 ? "exact" : "confident", first, Collections.singletonList(first), query);
+    }
+    // Two different people look equally likely: ask for a word instead of showing the phone book.
+    if (first.level >= 2 && second.level >= 2 && gap < AUTO_GAP) {
+      List<Candidate> close = new ArrayList<>();
+      for (Candidate candidate : ranked) {
+        if (candidate.score >= CONFIRM_SCORE && first.score - candidate.score <= AUTO_GAP) close.add(candidate);
+        if (close.size() >= 3) break;
+      }
+      return new Decision("choose", first, close.isEmpty() ? ranked : close, query, true);
+    }
+    return new Decision("confirm", first, Collections.singletonList(first), query);
   }
 
   public static Decision match(String spoken, List<Contact> contacts) {
@@ -175,8 +316,9 @@ public final class NameMatcher {
   }
 
   private static final class Score {
-    final double value; final String reason;
-    Score(double value, String reason) { this.value = value; this.reason = reason; }
+    final double value; final String reason; final int level;
+    Score(double value, String reason) { this(value, reason, 5); }
+    Score(double value, String reason, int level) { this.value = value; this.reason = reason; this.level = level; }
     Score max(Score other) { return other.value > value ? other : this; }
   }
 
@@ -185,8 +327,8 @@ public final class NameMatcher {
     if (candidateName == null || candidateName.trim().isEmpty()) return new Score(0, "empty");
     String nameFold = BengaliPhonetics.fold(candidateName);
     if (nameFold.isEmpty()) return new Score(0, "empty");
-    if (nameFold.equals(queryFold)) return new Score(1.0, "exact");
-    if (stripSpaces(nameFold).equals(stripSpaces(queryFold))) return new Score(0.99, "exact-spacing");
+    if (nameFold.equals(queryFold)) return new Score(1.0, "exact", 1);
+    if (stripSpaces(nameFold).equals(stripSpaces(queryFold))) return new Score(0.99, "exact-spacing", 1);
 
     Set<String> nameVars = BengaliPhonetics.latinVariants(candidateName);
     String nameKey = BengaliPhonetics.phoneticKey(candidateName);
@@ -194,25 +336,32 @@ public final class NameMatcher {
     double best = 0;
     String reason = "weak";
 
+    int level = 5;
     if (!queryKey.isEmpty() && queryKey.equals(nameKey)) {
-      best = 0.93; reason = "phonetic-key";
+      best = 0.93; reason = "phonetic-key"; level = 4;
     } else if (!queryCons.isEmpty() && queryCons.equals(nameCons) && queryCons.length() >= 2) {
-      best = 0.88; reason = "consonant-key";
+      best = 0.88; reason = "consonant-key"; level = 4;
     }
 
     for (String q : queryVars) {
       for (String n : nameVars) {
         if (q.equals(n)) {
-          if (best < 0.96) { best = 0.96; reason = "variant-exact"; }
+          if (best < 0.96) { best = 0.96; reason = "variant-exact"; level = 3; }
           continue;
         }
-        if (stripSpaces(q).equals(stripSpaces(n)) && best < 0.94) {
-          best = 0.94; reason = "variant-spacing";
+        if (stripSpaces(q).equals(stripSpaces(n))) {
+          if (best < 0.94) { best = 0.94; reason = "variant-spacing"; level = 3; }
+          continue;
         }
+        // A spelling difference is a variant only when it is small: one or two letters in a short
+        // name. "Baba" and "Baban" differ by a letter but are different people, so the prefix rule
+        // below is what decides between them, and it is ranked lower than an exact name.
         double jaro = jaroWinkler(q, n);
-        if (jaro > best) { best = jaro * 0.97; reason = "jaro"; }
+        if (!q.endsWith(n) && !n.endsWith(q) && jaro >= 0.94) {
+          if (jaro * 0.97 > best) { best = jaro * 0.97; reason = "variant-spelling"; level = 3; }
+        }
         double lev = levenshteinSimilarity(q, n);
-        if (lev > best) { best = lev * 0.93; reason = "levenshtein"; }
+        if (lev >= 0.86 && lev * 0.93 > best) { best = lev * 0.93; reason = "levenshtein"; level = 4; }
       }
     }
 
@@ -221,7 +370,7 @@ public final class NameMatcher {
       int max = Math.max(nameFold.length(), queryFold.length());
       if (min >= 3) {
         double prefix = 0.70 + 0.22 * ((double) min / max);
-        if (prefix > best) { best = prefix; reason = "prefix"; }
+        if (prefix > best) { best = prefix; reason = "prefix"; level = 5; }
       }
     }
     String[] queryTokens = queryFold.split(" ");
@@ -235,15 +384,15 @@ public final class NameMatcher {
       }
       if (hits > 0) {
         double token = 0.62 + 0.3 * hits / Math.max(queryTokens.length, nameTokens.length);
-        if (token > best) { best = token; reason = "token"; }
+        if (token > best) { best = token; reason = "token"; level = 5; }
       }
     }
-    return new Score(clamp(best), reason);
+    return new Score(clamp(best), reason, level);
   }
 
   private static String stripSpaces(String value) { return value.replace(" ", ""); }
 
-  static double jaroWinkler(String a, String b) {
+  public static double jaroWinkler(String a, String b) {
     if (a.equals(b)) return 1.0;
     if (a.isEmpty() || b.isEmpty()) return 0.0;
     int matchDist = Math.max(a.length(), b.length()) / 2 - 1;

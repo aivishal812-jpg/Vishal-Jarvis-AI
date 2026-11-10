@@ -181,7 +181,7 @@ public final class MobileActions {
       else activity.registerReceiver(smsReceiver,filter);
       smsReceiverRegistered=true;
     } catch(RuntimeException ignored){smsReceiverRegistered=false;}
-    this.matcher=new ContactMatcher(activity,new ContactAliasStore(activity.getSharedPreferences("myraa.mobile.v1",0)));
+    this.matcher=new ContactMatcher(activity,new ContactAliasStore(activity.getSharedPreferences("myraa.mobile.v1",0)),activity.getSharedPreferences("myraa.mobile.v1",0));
   }
   /** Test seam: injected fakes run with permissions treated as granted. */
   public MobileActions(Activity activity,Result result,Launcher launcher,Contacts contacts){this.activity=activity;this.result=result;this.launcher=launcher;this.contacts=contacts;this.permissionsGranted=true;}
@@ -508,9 +508,16 @@ public final class MobileActions {
       List<Recipient> ranked=new ArrayList<>();
       for(NameMatcher.Candidate c:decision.ranked)ranked.add(new Recipient(c.name,c.phone,c.score));
       Recipient best=new Recipient(decision.best.name,decision.best.phone,decision.best.score);
-      if("choose".equals(decision.verdict)){choosePerson(id,spoken,ranked,calling,user);return;}
+      if("choose".equals(decision.verdict)){
+        // The phone book cannot settle it (Baba / Baban / Baban-2 / Bablu). Instead of a long
+        // list, ask for a word and offer only the few people who are genuinely close.
+        if(decision.askWord)askKeyWord(id,spoken,decision,ranked,calling,user);
+        else choosePerson(id,spoken,ranked,calling,user);
+        return;
+      }
       if("confirm".equals(decision.verdict)){confirmPerson(id,spoken,best,calling,user);return;}
       announcePerson(best,calling);
+      rememberPick(spoken,decision.best);
       user.use(best);
       return;
     }
@@ -547,11 +554,51 @@ public final class MobileActions {
       .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");}).show();
   }
 
+  private void rememberRecipient(String spoken,Recipient chosen){
+    if(chosen==null)return;
+    rememberPick(spoken,new NameMatcher.Candidate(chosen.name,chosen.phone,chosen.score,"chosen"));
+  }
+
+  /** Saves which person this spoken word means, so the same question is never asked twice. */
+  private void rememberPick(String spoken,NameMatcher.Candidate chosen){
+    try{if(matcher!=null&&chosen!=null)matcher.rememberPick(spoken,chosen);}catch(RuntimeException ignored){ /* a pick that cannot be saved must not block the call */ }
+  }
+
+  /**
+   * Asks for one clarifying word instead of showing every contact that starts with "ba".
+   *
+   * Three answers: a full name typed or said, one of the few close people, or a relation tag
+   * (বাবা, মা, বোন…) which is then remembered for that contact.
+   */
+  private void askKeyWord(String id,String spoken,NameMatcher.Decision decision,List<Recipient> ranked,boolean calling,PersonUser user){
+    if(chooser!=null){finish(id,"busy",calling?"Answer the current contact question first.":"Choose the recipient from the current question first.");return;}
+    final List<NameMatcher.Candidate> close=new ArrayList<>(decision.ranked);
+    String[] buttons=new String[close.size()];
+    for(int i=0;i<buttons.length;i++)buttons[i]=close.get(i).name+" · +"+close.get(i).phone;
+    chooserId=id;
+    chooser=new AlertDialog.Builder(activity)
+      .setTitle("“"+spoken+"” — কাকে?")
+      .setMessage(calling
+        ?"এই নামে কয়েকজন আছেন। নামটা পুরো বলুন (যেমন “Baban-2”), বা নিচের যিনি ঠিক তিনি — পরের বার আর জিজ্ঞেস করব না।"
+        :"কয়েকজন মিলেছেন। নামটা পুরো বলুন, বা নিচের সঠিক জনকে বেছে নিন — পরের বার মনে রাখব।")
+      .setItems(buttons,(d,index)->{
+        chooser=null;
+        NameMatcher.Candidate chosen=close.get(index);
+        rememberPick(spoken,chosen);
+        user.use(new Recipient(chosen.name,chosen.phone,chosen.score));
+      })
+      .setNegativeButton(calling?"বাতিল":"Cancel",(d,w)->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
+      .setNeutralButton("আরেক নাম বলব",(d,w)->{chooser=null;finish(id,"needs_name",
+        calling?"Say the full saved name (for example \"Baban-2\") or the phone number, and I will call that person.":"Say the full saved name or the phone number, and I will message that person.");})
+      .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
+      .show();
+  }
+
   private void choosePerson(String id,String spoken,List<Recipient> matches,boolean calling,PersonUser user){
     if(chooser!=null){finish(id,"busy",calling?"Choose the contact from the current list first.":"Choose the recipient from the current list first.");return;}
     String[] labels=new String[matches.size()];for(int i=0;i<labels.length;i++)labels[i]=matches.get(i).name+" · +"+matches.get(i).phone;
     chooserId=id;chooser=new AlertDialog.Builder(activity).setTitle(calling?"কাকে কল করবে — "+spoken+"?":"Which "+spoken+"?")
-      .setItems(labels,(d,index)->{chooser=null;user.use(matches.get(index));})
+      .setItems(labels,(d,index)->{chooser=null;rememberRecipient(spoken,matches.get(index));user.use(matches.get(index));})
       .setNegativeButton(calling?"বাতিল":"Cancel",(d,w)->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");})
       .setOnCancelListener(d->{chooser=null;finish(id,"cancelled",calling?"Call cancelled. Nobody was called.":"Cancelled. Nothing was sent.");}).show();
   }

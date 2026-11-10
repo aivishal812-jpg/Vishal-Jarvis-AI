@@ -10,7 +10,7 @@ import java.util.*;
  * Contacts database; aliases live only in app preferences.
  */
 public final class ContactAliasStore {
-  private static final String KEY = "contactAliasesV1";
+  static final String KEY = "contactAliasesV1";
   private final SharedPreferences prefs;
   private final Map<String, String> spokenToName = new LinkedHashMap<>();
 

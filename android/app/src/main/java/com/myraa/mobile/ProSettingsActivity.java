@@ -34,7 +34,7 @@ import java.util.Iterator;
 public final class ProSettingsActivity extends Activity {
   private static final int MIC_REQUEST = 201, CAL_REQUEST = 202, EXPORT_REQUEST = 203, IMPORT_REQUEST = 204, LOCATION_REQUEST = 205, CALL_REQUEST = 206;
   private static final String[] BACKUP_KEYS = {"memory", "language", "model", "liveModel", "quality", "spokenReplies", "textScale",
-    "contactAliasesV1", JarvisPrefs.WAKE_WORD, JarvisPrefs.SECURE_ACTIONS, JarvisPrefs.FALLBACK_MODEL, JarvisPrefs.HOME_CITY,
+    ContactAliasStore.KEY, ContactMemory.KEY, JarvisPrefs.WAKE_WORD, JarvisPrefs.SECURE_ACTIONS, JarvisPrefs.FALLBACK_MODEL, JarvisPrefs.HOME_CITY,
     NoteStore.KEY, ReminderStore.KEY};
   private static final int BG = Color.rgb(7, 12, 22), CARD = Color.rgb(16, 26, 44), ACCENT = Color.rgb(56, 189, 248), TEXT = Color.rgb(226, 236, 248), MUTED = Color.rgb(140, 160, 186);
   private LinearLayout root;
@@ -116,6 +116,26 @@ public final class ProSettingsActivity extends Activity {
     calls.addView(button("Call assistant: " + CallAssistService.describeMode(this),
       () -> CallAssistService.openAnswerPermission(this)));
     calls.addView(button("Test: show the call card now", () -> { CallAssistService.start(this); Toast.makeText(this, "Card should appear at the top. Stop it from its notification.", Toast.LENGTH_LONG).show(); }));
+
+    ContactMemory learned = new ContactMemory(prefs.getString(ContactMemory.KEY, ""));
+    LinearLayout people = card("Who a name means", learned.isEmpty()
+      ? "Say \"baba ke call koro\" and Jarvis asks once which Baba you mean; the answer is remembered here, so the next time it calls straight away. Nothing is written into your address book."
+      : "Jarvis has learned " + learned.size() + " name(s) from your own choices. Saying the word again calls that person directly.");
+    for (ContactMemory.Pick pick : learned.top(8)) {
+      people.addView(button("“" + pick.spoken + "” → " + pick.name + "  (used " + pick.uses + "×) — forget",
+        () -> new AlertDialog.Builder(this).setTitle("Forget this?")
+          .setMessage("Jarvis will ask again next time you say “" + pick.spoken + "”. Your address book is not touched.")
+          .setPositiveButton("Forget", (d, w) -> {
+            ContactMemory current = new ContactMemory(prefs.getString(ContactMemory.KEY, ""));
+            current.forget(pick.spoken);
+            prefs.edit().putString(ContactMemory.KEY, current.toJson()).apply();
+            render();
+          }).setNegativeButton("Keep", null).show()));
+    }
+    if (!learned.isEmpty()) people.addView(button("Forget all learned names", () -> new AlertDialog.Builder(this)
+      .setTitle("Forget all learned names?").setMessage("Jarvis will ask which contact you mean again. Your address book is not touched.")
+      .setPositiveButton("Forget all", (d, w) -> { prefs.edit().remove(ContactMemory.KEY).apply(); render(); })
+      .setNegativeButton("Keep", null).show()));
 
     LinearLayout lock = card("Security lock", SecureGate.available(this) ? "Ask for fingerprint, face or screen lock before Jarvis places a call or sends a message." : "Set a screen lock on this phone (Android 9+) to use this.");
     lock.addView(toggle("Lock calls and messages", JarvisPrefs.secureActions(this), on -> prefs.edit().putBoolean(JarvisPrefs.SECURE_ACTIONS, on).apply()));

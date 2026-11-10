@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.CommonDataKinds.Nickname;
+import android.content.SharedPreferences;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.TelephonyManager;
@@ -13,18 +14,81 @@ import java.util.*;
 public final class ContactMatcher {
   private final Activity activity;
   private final ContactAliasStore aliases;
+  private final ContactMemory memory;
+  private final SharedPreferences prefs;
+  private List<NameMatcher.Person> cached;
+  private long cachedAt;
 
   public ContactMatcher(Activity activity, ContactAliasStore aliases) {
-    this.activity = activity;
-    this.aliases = aliases;
+    this(activity, aliases, null);
   }
 
+  public ContactMatcher(Activity activity, ContactAliasStore aliases, SharedPreferences prefs) {
+    this.activity = activity;
+    this.aliases = aliases;
+    this.prefs = prefs;
+    this.memory = new ContactMemory(prefs == null ? "" : prefs.getString(ContactMemory.KEY, ""));
+  }
+
+  /**
+   * Decides who the user meant. The learned picks are consulted first, so saying "baba" after
+   * calling father once never brings up a list of every contact starting with "ba".
+   */
   public NameMatcher.Decision match(String spoken) {
-    return NameMatcher.match(spoken, loadContacts(), aliases.snapshot());
+    return NameMatcher.resolve(spoken, people(), memory, aliases.snapshot());
+  }
+
+  /** Remembers the person the user actually used, for this spoken word. */
+  public void rememberPick(String spoken, NameMatcher.Candidate chosen) {
+    if (chosen == null) return;
+    memory.remember(spoken, chosen.name, chosen.phone, chosen.contactId);
+    if (prefs != null) prefs.edit().putString(ContactMemory.KEY, memory.toJson()).apply();
   }
 
   public void rememberAlias(String spoken, String contactName) {
     aliases.remember(spoken, contactName);
+  }
+
+  List<NameMatcher.Person> people() {
+    long now = System.currentTimeMillis();
+    if (cached != null && now - cachedAt < 30000) return cached;
+    cached = loadPeople();
+    cachedAt = now;
+    return cached;
+  }
+
+  /** Drops the 30-second cache after the user edits the address book or a learned pick. */
+  public void invalidate() { cached = null; cachedAt = 0; }
+
+  ContactMemory memory() { return memory; }
+
+  List<NameMatcher.Person> loadPeople() {
+    Map<String, List<String>> nicknames = loadNicknames();
+    Map<String, String> phonetic = loadPhoneticNames();
+    List<NameMatcher.Person> found = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    String[] projection = new String[]{Phone.DISPLAY_NAME, Phone.NUMBER, Phone.NORMALIZED_NUMBER, Phone.CONTACT_ID};
+    try (Cursor c = activity.getContentResolver().query(Phone.CONTENT_URI, projection, null, null, Phone.DISPLAY_NAME + " ASC")) {
+      if (c == null) return found;
+      while (c.moveToNext() && found.size() < 2500) {
+        String name = c.getString(0);
+        String raw = c.getString(2);
+        if (raw == null || raw.isEmpty()) raw = c.getString(1);
+        String phone = international(raw);
+        String contactId = c.getString(3);
+        if (phone == null || name == null || name.trim().isEmpty()) continue;
+        // One entry per person per number: a second number for the same person is a real choice,
+        // a duplicate row for the same number is not.
+        if (!seen.add(phone + "\0" + name)) continue;
+        List<String> extras = new ArrayList<>();
+        List<String> nicks = nicknames.get(contactId);
+        if (nicks != null) extras.addAll(nicks);
+        String ph = phonetic.get(contactId);
+        if (ph != null && !ph.trim().isEmpty()) extras.add(ph);
+        found.add(new NameMatcher.Person(name, phone, contactId == null ? "" : contactId, extras));
+      }
+    } catch (SecurityException ignored) { /* the permission was revoked between screens */ }
+    return found;
   }
 
   public List<NameMatcher.Contact> loadContacts() {
