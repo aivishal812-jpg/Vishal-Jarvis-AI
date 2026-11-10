@@ -135,8 +135,8 @@ export function tickerMarkup(): string {
 }
 
 /**
- * The information wall. It lives in the fixed `#screen-hud` layer so the cards can use the corners
- * of the whole display instead of the small stage box. Every value is a live measurement.
+ * The four corner cards of the stage. They frame the character and the ring; every value in them is
+ * a live measurement (heap, battery, online state, turns) rather than decoration.
  */
 export function panelMarkup(): string {
   return `
@@ -158,6 +158,7 @@ export function panelMarkup(): string {
       <div class="hud-gauge"><span>MEM</span><div class="hud-bar"><i id="hud-mem"></i></div><b id="hud-mem-val">0%</b></div>
       <div class="hud-gauge"><span>BATT</span><div class="hud-bar"><i id="hud-batt"></i></div><b id="hud-batt-val">--</b></div>
       <div class="hud-gauge"><span>ACT</span><div class="hud-bar"><i id="hud-act"></i></div><b id="hud-act-val">0%</b></div>
+      <div class="hud-gauge"><span>MIC</span><div class="hud-bar"><i id="hud-level"></i></div><b id="hud-level-val">0%</b></div>
       <div class="hud-rule"></div>
       <div class="hud-kv"><span>SESSION</span><b id="hud-uptime">00:00</b></div>
       <div class="hud-kv"><span>STATE</span><b id="hud-state">IDLE</b></div>
@@ -175,18 +176,6 @@ export function panelMarkup(): string {
       <div class="hud-kv"><span>TURNS</span><b id="hud-turns">0</b></div>
     </div>
 
-    <div class="hud-panel hud-slot" data-slot="e">
-      <div class="hud-head">VOICE LINK <span data-hud="mode">STANDBY</span></div>
-      <div class="hud-gauge"><span>MIC</span><div class="hud-bar"><i id="hud-level"></i></div><b id="hud-level-val">0%</b></div>
-      <div class="hud-kv"><span>LINK</span><b data-hud="link">ONLINE</b></div>
-    </div>
-
-    <div class="hud-panel hud-slot" data-slot="f">
-      <div class="hud-head">MEMORY INDEX</div>
-      <div class="hud-kv"><span>FACTS</span><b data-hud="facts">0</b></div>
-      <div class="hud-kv"><span>TURNS</span><b data-hud="turns">0</b></div>
-      <div class="hud-kv"><span>UPTIME</span><b data-hud="uptime">00:00</b></div>
-    </div>
   </div>`;
 }
 

@@ -131,7 +131,10 @@ main{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
   mask-image:linear-gradient(to bottom,#000 calc(100% - 24px),transparent);
   -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 24px),transparent)}
 .search-note{padding:2px 0 8px}
-.message{padding:7px 0;border-bottom:1px solid var(--line)}
+.message{padding:7px 8px;border-bottom:1px solid var(--line);border-radius:8px;
+  background:linear-gradient(90deg,#0a0509b8,#0a050930)}
+.message.user{background:linear-gradient(90deg,#120710cc,#12071042)}
+.message.model{background:linear-gradient(90deg,#0d050cc4,#0d050c26)}
 .message:last-child{border-bottom:0}
 .message small{display:flex;gap:6px;align-items:center;font-size:8px;letter-spacing:2px;color:var(--accent);text-shadow:0 0 12px #ff244266}
 .message.user small{color:var(--muted)}
@@ -328,16 +331,13 @@ dialog input:not([type=checkbox]),dialog select{display:block;width:100%;margin-
 .hud-panel-layer{position:fixed;inset:0;pointer-events:none;z-index:3;
   font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 .hud-panel-layer .hud-panel{pointer-events:none;backdrop-filter:blur(6px) saturate(120%)}
-.hud-slot[data-slot="a"]{left:9px;top:88px;width:min(43vw,172px)}
-.hud-slot[data-slot="b"]{right:9px;top:88px;width:min(41vw,164px)}
-.hud-slot[data-slot="c"]{left:9px;bottom:calc(122px + env(safe-area-inset-bottom));width:min(42vw,166px)}
-.hud-slot[data-slot="d"]{right:9px;bottom:calc(122px + env(safe-area-inset-bottom));width:min(38vw,152px)}
-/* the two middle cards only appear when the display is tall enough to keep the text clear */
-.hud-slot[data-slot="e"],.hud-slot[data-slot="f"]{display:none}
-@media(min-height:700px){
-  .hud-slot[data-slot="e"]{display:block;left:9px;top:52%;width:min(36vw,140px);opacity:.92}
-  .hud-slot[data-slot="f"]{display:block;right:9px;top:52%;width:min(36vw,140px);opacity:.92}
-}
+.hud-slot[data-slot="a"]{left:9px;top:86px;width:min(42vw,166px)}
+.hud-slot[data-slot="b"]{right:9px;top:86px;width:min(42vw,166px)}
+.hud-slot[data-slot="c"]{left:9px;bottom:calc(112px + env(safe-area-inset-bottom));width:min(42vw,166px)}
+.hud-slot[data-slot="d"]{right:9px;bottom:calc(112px + env(safe-area-inset-bottom));width:min(42vw,160px)}
+/* The side rails and vertical tags are hidden on narrow screens, where they would collide with the
+   telemetry text; the corner cards already give the display a frame. */
+@media(max-width:560px){ .side-tag,.rail{display:none} }
 #hud-wave{display:block;width:100%;height:26px;margin:3px 0}
 .hud-metric-row{display:flex;justify-content:space-between;gap:6px;color:#ff8a94}
 .hud-metric-row b{color:#fff;font-weight:500}
@@ -373,11 +373,13 @@ dialog input:not([type=checkbox]),dialog select{display:block;width:100%;margin-
 .gestures{z-index:3}
 .presence{z-index:3;top:auto;bottom:4px;left:50%;transform:translateX(-50%);background:#170c12d9}
 
-@media(max-height:560px){
-  .hud-slot[data-slot="c"],.hud-slot[data-slot="d"],
-  .hud-slot[data-slot="e"],.hud-slot[data-slot="f"]{display:none}
-  .hud-slot[data-slot="a"],.hud-slot[data-slot="b"]{top:76px}
+@media(max-height:600px){
+  .hud-slot[data-slot="c"],.hud-slot[data-slot="d"]{display:none}
+  .hud-slot[data-slot="a"],.hud-slot[data-slot="b"]{top:74px}
   .portrait{flex-basis:clamp(170px,32dvh,300px)}
+}
+@media(max-height:430px){
+  .hud-panel-layer{display:none}
 }
 @media(min-width:640px){
   .portrait{flex-basis:clamp(260px,40dvh,460px)}
