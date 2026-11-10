@@ -1,15 +1,24 @@
-<!doctype html><html><body style="margin:0;background:#070407">
-<div id="avatar" style="width:390px;height:560px;position:relative"></div>
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/src/mobile/mobile.css">
+<style>body{margin:0;background:#070407;display:grid;place-items:center;min-height:100vh}
+#stage{position:relative;width:390px;height:620px;overflow:hidden}
+</style></head><body>
+<div id="stage" class="portrait"><div class="halo"></div><div id="hud"></div><div id="avatar"></div></div>
 <script type="module">
-import * as THREE from '/node_modules/three/build/three.module.js';
+const { hudMarkup, HudStage } = await import('/src/mobile/hud.ts');
+const { RobotCharacter } = await import('/src/mobile/RobotCharacter.ts');
+document.getElementById('hud').innerHTML = hudMarkup();
+const hud = new HudStage(document.getElementById('hud'), () => ({ cpu: 38, memory: 54, battery: 72, activity: 61, uptime: 42 }));
+hud.setTurns(12); hud.start();
+for (let i=0;i<20;i++) hud.setLevel(0.2 + Math.random()*0.7);
+setInterval(()=>hud.setLevel(Math.random()*0.9), 180);
 const canvas=document.createElement('canvas');
-document.getElementById('avatar').appendChild(canvas);
-canvas.style.width='100%';canvas.style.height='100%';
-// smoke test: the same JS file the app uses, loaded through the dev server
-const mod = await import('/src/mobile/RobotCharacter.ts');
-const r = new mod.RobotCharacter(canvas,'high');
-r.resize(390,560);
+const host=document.getElementById('avatar');
+host.appendChild(canvas);
+const box=host.getBoundingClientRect();
+const r=new RobotCharacter(canvas,'high');
+r.resize(box.width,box.height);
 await r.load();
 r.frameFullBody();
-window.__ok = true;
+window.__ready=true;
 </script></body></html>

@@ -3,6 +3,7 @@ import { MyraaAudioSession, type LiveState } from '../lib/audio';
 import { MobileLiveTransport } from './LiveTransport';
 import { describeAction, parseMobileAction } from './actions';
 import { RobotCharacter } from './RobotCharacter';
+import { HudStage, hudMarkup } from './hud';
 import { parseCharacterCommand } from '../../shared/character/commands';
 
 interface MemoryFact { id: string; text: string; at: number }
@@ -39,6 +40,7 @@ const fallbackState: AppState = { history: [], model: 'gemini-3.5-flash', qualit
 let state: AppState = bridge ? JSON.parse(bridge.getState()) : fallbackState;
 
 let system: RobotCharacter | null = null;
+let hud: HudStage | null = null;
 let generation = 0;
 let busy = false;
 let requestId = '';
@@ -105,7 +107,9 @@ app.innerHTML = `
   <div id="offline" class="banner" hidden>You are offline. Chat requests can be saved and will resume when connected.</div>
   <main>
     <section class="portrait" aria-label="Vishal Jarvis 3D robot character">
-      <div class="halo"></div><div id="avatar"></div>
+      <div class="halo"></div>
+      <div id="hud">${hudMarkup()}</div>
+      <div id="avatar"></div>
       <div class="avatar-status" id="avatar-status" role="status">Loading your character…</div>
       <span class="presence"><i></i> <span id="presence">Here with you</span></span>
       <div class="gestures" role="group" aria-label="Character controls">
@@ -223,9 +227,48 @@ app.innerHTML = `
 `;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+/**
+ * Live numbers for the HUD. Everything here is either measured on this device (heap use, call
+ * state, online state) or derived from how busy the assistant is; nothing is claimed to be a real
+ * CPU temperature, because Android does not expose one.
+ */
+const hudSamples = () => {
+  const memory = (performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+  const heap = memory && memory.jsHeapSizeLimit > 0 ? (memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100 : undefined;
+  const turns = state.history?.length || 0;
+  const load = Math.min(100, (busy ? 62 : 14) + (turns % 9) * 3);
+  return {
+    cpu: load,
+    memory: heap == null ? Math.min(100, turns * 2) : Math.min(100, heap),
+    activity: busy ? 74 : el('voice').getAttribute('aria-pressed') === 'true' ? 52 : 12,
+    battery: phoneBattery,
+    uptime: sessionSeconds,
+  };
+};
+let phoneBattery: number | undefined;
+let sessionSeconds = 0;
+interface BatteryLike { level: number; addEventListener(type: string, listener: () => void): void; }
+try {
+  const batteryApi = (navigator as unknown as { getBattery?: () => Promise<BatteryLike> }).getBattery;
+  batteryApi?.call(navigator).then((battery: BatteryLike) => {
+    const apply = () => { phoneBattery = Math.round(battery.level * 100); };
+    apply();
+    battery.addEventListener('levelchange', apply);
+  }).catch(() => { /* battery status is a courtesy, never a requirement */ });
+} catch { /* unsupported */ }
+setInterval(() => { sessionSeconds++; }, 1000);
 const notice = (message: string) => { el('notice').textContent = message; };
 const vibe = (pattern: number | number[] = 8) => { try { navigator.vibrate?.(pattern); } catch { /* unsupported */ } };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+function startHud() {
+  const stage = document.getElementById('hud');
+  if (!stage || hud) return;
+  hud = new HudStage(stage, hudSamples);
+  hud.setTurns(state.history?.length || 0);
+  hud.start();
+}
 
 function timeLabel(at?: number) {
   const date = at ? new Date(at) : new Date();
@@ -522,6 +565,7 @@ function liveState(value: LiveState) {
   el('voice').setAttribute('aria-pressed', String(active));
   el('voice').querySelector('span')!.textContent = active ? 'End' : 'Talk';
   el('presence').textContent = value === 'connecting' ? 'Connecting live…' : value === 'speaking' ? 'Speaking with you' : value === 'listening' ? 'Live · listening to you' : 'Here with you';
+  hud?.setActivity(value === 'speaking' ? 'speaking' : value === 'listening' ? 'listening' : value === 'connecting' ? 'linking' : 'idle');
   setStatus(value === 'disconnected' ? 'Ready' : value === 'connecting' ? 'Connecting…' : 'Live call in progress', !navigator.onLine);
   system?.setFrameInput({ activity: value === 'speaking' ? 'talking' : value === 'listening' ? 'listening' : 'idle',
     outputAnalyser: liveSession?.outputAnalyser ?? null, inputAnalyser: liveSession?.inputAnalyser ?? null });
@@ -586,6 +630,7 @@ window.MyraaEvents = event => {
   }
   if (event.type === 'speech') {
     speaking = !!event.active;
+    hud?.setActivity(speaking ? 'speaking' : busy ? 'working' : 'idle');
     return;
   }
   if (event.type === 'delta' && event.id === requestId) {
@@ -957,14 +1002,14 @@ el('avatar').onpointermove = event => {
   system?.setPointer((event.clientX - box.left) / box.width * 2 - 1, 1 - (event.clientY - box.top) / box.height * 2);
 };
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (!backgroundLive && !permissionPrompt) stopVoice(); system?.stop(); /* TTS is not stopped: Android speech continues in the background. */ }
-  else system?.start();
+  if (document.hidden) { if (!backgroundLive && !permissionPrompt) stopVoice(); system?.stop(); hud?.stop(); /* TTS is not stopped: Android speech continues in the background. */ }
+  else { system?.start(); hud?.start(); }
 });
 window.addEventListener('myraa:lifecycle', event => {
   const detail = (event as CustomEvent).detail;
   foreground = !!detail?.active; permissionPrompt = !!detail?.permissionPrompt; backgroundLive = !!detail?.backgroundLive;
   if (!foreground && !backgroundLive && !detail?.permissionPrompt) stopVoice();
-  if (foreground) system?.start(); else system?.stop(); /* do not stop TTS/Live audio merely for backgrounding */
+  if (foreground) { system?.start(); hud?.start(); } else { system?.stop(); hud?.stop(); } /* do not stop TTS/Live audio merely for backgrounding */
 });
 window.addEventListener('myraa:stop-live', () => { stopVoice(); notice('Live call stopped.'); });
 window.addEventListener('pagehide', () => { stopVoice(); generation++; system?.dispose(); });
@@ -983,6 +1028,7 @@ if (state.lastFailedTask && !state.pendingTasks) {
   notice(state.lastFailedTask.message || 'A previous background task could not finish.');
   if (!el<HTMLTextAreaElement>('input').value) { el<HTMLTextAreaElement>('input').value = state.lastFailedTask.text; autosize(); }
 } else if (state.pendingTasks) setStatus(`${state.pendingTasks} saved task${state.pendingTasks === 1 ? '' : 's'} pending`);
+startHud();
 void loadAvatar();
 {
   const pro = (state as any).pro;
