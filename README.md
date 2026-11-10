@@ -9,6 +9,12 @@
 3. অথবা **Releases** অংশ থেকে সরাসরি `.apk` নামিয়ে নিন।
 4. ফোনে "Unknown apps install" অনুমতি দিয়ে ইনস্টল করুন। আগের অন্য-কী-তে সাইন করা ভার্সন থাকলে প্রথমবার আনইনস্টল করে নিতে হবে।
 
+## চেহারা (সর্বশেষ)
+
+পুরো ইন্টারফেস এখন **futuristic crimson** — গভীর কালচে-লাল ব্যাকগ্রাউন্ড, ধীরে ভাসা crimson aurora, HUD গ্রিড, কোণে targeting bracket, জ্বলজ্বলে composer আর পেছনে crimson halo।
+চরিত্রটি সম্পূর্ণ নতুন করে বানানো: স্তরে স্তরে armour plate (clearcoat metal), কাঁধের pauldron, হাতে **repulsor**, বুকে **arc reactor + halo glow**, vented visor ও jaw, articulated আঙুল, boot ও joint ring — সাথে **procedural studio environment map** (ধাতু সত্যিই কিছু প্রতিফলিত করে) আর **real bloom**।
+Settings → Graphics: **Maximum** (bloom + reflections + full detail), **Medium** (ডিফল্ট, glow সহ), **Low** (ব্যাটারি বাঁচাতে glow/reflection বন্ধ)।
+
 ## v2.2.0-এ নতুন
 
 | Feature | কীভাবে ব্যবহার করবেন |
