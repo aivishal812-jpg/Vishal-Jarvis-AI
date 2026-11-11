@@ -117,6 +117,19 @@ public class MainActivity extends Activity {
     try { super.onCreate(saved); } catch (Throwable ignored) { /* reported by the skin below instead */ }
     trace("MainActivity: super.onCreate done");
     try { setTheme(android.R.style.Theme_Material_NoActionBar); } catch (Throwable ignored) { /* the manifest theme is fine */ }
+    // Paint something immediately: a tap that shows a black screen for a second looks like a crash
+    // to the person holding the phone. This native splash needs no WebView and no 3D.
+    try {
+      TextView splash = new TextView(this);
+      splash.setText("VISHAL JARVIS\n\nstarting core…");
+      splash.setTextColor(Color.rgb(255, 217, 194));
+      splash.setTextSize(14);
+      splash.setGravity(android.view.Gravity.CENTER);
+      splash.setLetterSpacing(0.18f);
+      splash.setBackgroundColor(Color.rgb(10, 6, 10));
+      setContentView(splash);
+      trace("MainActivity: splash drawn");
+    } catch (Throwable ignored) { /* the WebView below still paints */ }
     try {
       prefs = getSharedPreferences("myraa.mobile.v1", MODE_PRIVATE);
       trace("MainActivity: prefs opened");
@@ -169,6 +182,12 @@ public class MainActivity extends Activity {
         if (mine != watchdogGeneration || pageLoaded) return;
         if (!scriptsLoaded) showWebViewError(stuckPageMessage());
       }, 12000);
+      // Second, later check: if the page never called pageReady() the splash would sit there forever.
+      web.postDelayed(() -> {
+        if (mine != watchdogGeneration || scriptsLoaded) return;
+        trace("pageReady never arrived — showing the trace screen");
+        try { showTraceScreen(); } catch (Throwable ignored) { showWebViewError(stuckPageMessage()); }
+      }, 25000);
     } catch (Throwable failure) {
       trace("MainActivity.onCreate FAILED: " + failure);
       try { CrashLog.record(this, Thread.currentThread(), failure); } catch (Throwable ignored) { /* already failing */ }
